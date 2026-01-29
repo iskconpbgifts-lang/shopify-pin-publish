@@ -20,6 +20,14 @@ export const loader = async ({ request }) => {
         descriptionHtml
         onlineStoreUrl
         handle
+        tags
+        images(first: 20) {
+          nodes {
+            id
+            originalSrc: url
+            altText
+          }
+        }
       }
     }`,
         {

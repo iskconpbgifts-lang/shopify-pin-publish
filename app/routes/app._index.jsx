@@ -12,7 +12,8 @@ import {
   Thumbnail,
   Modal,
   Spinner,
-  Banner
+  Banner,
+  Badge
 } from "@shopify/polaris";
 import { TitleBar, useAppBridge } from "@shopify/app-bridge-react";
 import { authenticate } from "../shopify.server";
@@ -31,7 +32,7 @@ export const action = async ({ request }) => {
   try {
     const { admin } = await authenticate.admin(request);
     // Use JSON parsing for better large payload handling
-    const { image: imageBase64 } = await request.json();
+    const { image: imageBase64, productId } = await request.json();
 
     if (!imageBase64) {
       return json({ error: "No image provided" }, { status: 400 });
@@ -48,6 +49,31 @@ export const action = async ({ request }) => {
     console.log("Index Action: Uploading...");
     const file = await uploadImageToShopify(admin, buffer, filename);
     console.log("Index Action: Success", file.url);
+
+    // Tag the product as Pinned
+    if (productId) {
+      console.log("Index Action: Tagging product", productId);
+      await admin.graphql(
+        `#graphql
+        mutation addTags($id: ID!, $tags: [String!]!) {
+          tagsAdd(id: $id, tags: $tags) {
+            node {
+              id
+            }
+            userErrors {
+              field
+              message
+            }
+          }
+        }`,
+        {
+          variables: {
+            id: productId,
+            tags: ["Pinterest Published"]
+          }
+        }
+      );
+    }
 
     return json({
       success: true,
@@ -136,7 +162,7 @@ export default function Index() {
       // ... (rest of function) ...
       console.log("Submitting to index action (JSON)...");
       fetcher.submit(
-        { image: croppedImageBase64 },
+        { image: croppedImageBase64, productId: selectedProduct.id },
         { method: "POST", encType: "application/json", action: "/app?index" }
       );
       // ...
@@ -160,6 +186,16 @@ export default function Index() {
     // Check if upload was successful AND if it belongs to the CURRENT selected product
     if (fetcher.data?.success && fetcher.data?.imageUrl && uploadingForProductId === selectedProduct?.id) {
       shopify.toast.show("Image uploaded!");
+
+      // Optimistically update tags to show "Published" badge immediately
+      setSelectedProduct(prev => {
+        const newTags = prev.tags ? [...prev.tags] : [];
+        if (!newTags.includes("Pinterest Published")) {
+          newTags.push("Pinterest Published");
+        }
+        return { ...prev, tags: newTags };
+      });
+
       const mediaUrl = fetcher.data.imageUrl;
       let productUrl;
 
@@ -282,7 +318,12 @@ export default function Index() {
                           Copy Title
                         </Button>
                       </BlockStack>
-                      <Button id="btn-change-product" onClick={selectProduct}>Change Product</Button>
+                      <BlockStack gap="200" align="end">
+                        {selectedProduct.tags && selectedProduct.tags.includes("Pinterest Published") && (
+                          <Badge tone="success">Pinterest Published</Badge>
+                        )}
+                        <Button id="btn-change-product" onClick={selectProduct}>Change Product</Button>
+                      </BlockStack>
                     </InlineStack>
 
 
