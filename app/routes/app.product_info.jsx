@@ -3,16 +3,16 @@ import { json } from "@remix-run/node";
 import { authenticate } from "../shopify.server";
 
 export const loader = async ({ request }) => {
-    const { admin } = await authenticate.admin(request);
-    const url = new URL(request.url);
-    const productId = url.searchParams.get("id");
+  const { admin } = await authenticate.admin(request);
+  const url = new URL(request.url);
+  const productId = url.searchParams.get("id");
 
-    if (!productId) {
-        return json({ error: "Missing ID" }, { status: 400 });
-    }
+  if (!productId) {
+    return json({ error: "Missing ID" }, { status: 400 });
+  }
 
-    const response = await admin.graphql(
-        `#graphql
+  const response = await admin.graphql(
+    `#graphql
     query getProduct($id: ID!) {
       product(id: $id) {
         id
@@ -30,13 +30,20 @@ export const loader = async ({ request }) => {
         }
       }
     }`,
-        {
-            variables: {
-                id: productId,
-            },
-        }
-    );
+    {
+      variables: {
+        id: productId,
+      },
+    }
+  );
 
-    const parsed = await response.json();
-    return json(parsed.data.product);
+  const parsed = await response.json();
+  const product = parsed.data.product;
+
+  // Normalize images to matching ResourcePicker format (array)
+  if (product && product.images && product.images.nodes) {
+    product.images = product.images.nodes;
+  }
+
+  return json(product);
 };

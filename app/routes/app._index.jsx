@@ -9,12 +9,21 @@ import {
   Button,
   BlockStack,
   InlineStack,
-  Thumbnail,
   Modal,
   Spinner,
   Banner,
-  Badge
+  Badge,
+  EmptyState,
+  InlineGrid,
+  Box,
+  Divider,
+  CalloutCard,
+  Icon
 } from "@shopify/polaris";
+import {
+  SettingsIcon,
+  DuplicateIcon
+} from "@shopify/polaris-icons";
 import { TitleBar, useAppBridge } from "@shopify/app-bridge-react";
 import { authenticate } from "../shopify.server";
 import { uploadImageToShopify } from "../services/shopify-files.server";
@@ -249,112 +258,192 @@ export default function Index() {
     <Page>
       <TitleBar title="Pin Publish" />
       <BlockStack gap="500">
-        <Layout>
-          <Layout.Section>
-            <Card>
-              <BlockStack gap="400">
-                <Text as="h2" variant="headingMd">Pinterest Publisher</Text>
 
-                {/* Settings Toggle */}
-                <Button id="btn-toggle-settings" onClick={() => setShowSettings(!showSettings)} variant="plain">
-                  {showSettings ? "Hide Settings" : "Show URL Settings"}
-                </Button>
-
-                {showSettings && (
-                  <BlockStack gap="300">
-                    <Text variant="bodyMd" fontWeight="bold">Link Destination:</Text>
-                    <InlineStack gap="400">
-                      <Button
-                        id="btn-mode-default"
-                        pressed={urlMode === 'default'}
-                        onClick={() => setUrlMode('default')}
-                      >
-                        Default Store URL
-                      </Button>
-                      <Button
-                        id="btn-mode-custom"
-                        pressed={urlMode === 'custom'}
-                        onClick={() => setUrlMode('custom')}
-                      >
-                        Custom Domain
-                      </Button>
-                    </InlineStack>
-
-                    {urlMode === 'custom' && (
-                      <div style={{ marginTop: '10px' }}>
-                        <Text variant="headingSm">Custom Domain Base URL:</Text>
+        {/* State: No Product Selected */}
+        {!selectedProduct ? (
+          <Layout>
+            <Layout.Section>
+              <Card>
+                <EmptyState
+                  heading="Start Pinning your Products"
+                  action={{
+                    content: 'Select Product',
+                    onAction: selectProduct,
+                    id: 'btn-select-product-empty'
+                  }}
+                  image="https://cdn.shopify.com/s/files/1/0262/4071/2726/files/emptystate-files.png"
+                >
+                  <p>Select a product from your catalog to create a Pinterest-optimized pin (2:3 aspect ratio).</p>
+                </EmptyState>
+              </Card>
+            </Layout.Section>
+            <Layout.Section variant="oneThird">
+              <Card>
+                <BlockStack gap="200">
+                  <Text as="h2" variant="headingSm">Configuration</Text>
+                  <Button id="btn-show-settings-empty" variant="plain" onClick={() => setShowSettings(!showSettings)}>
+                    {showSettings ? "Hide Settings" : "Configure App Settings"}
+                  </Button>
+                  {showSettings && (
+                    <BlockStack gap="200">
+                      <Divider />
+                      <Text variant="bodySm" fontWeight="bold">Link Destination</Text>
+                      <InlineStack gap="200">
+                        <Button size="micro" pressed={urlMode === 'default'} onClick={() => setUrlMode('default')} id="btn-mode-default-sm">Store URL</Button>
+                        <Button size="micro" pressed={urlMode === 'custom'} onClick={() => setUrlMode('custom')} id="btn-mode-custom-sm">Custom</Button>
+                      </InlineStack>
+                      {urlMode === 'custom' && (
                         <input
-                          id="input-custom-domain"
-                          type="text"
+                          id="input-custom-domain-sm"
+                          placeholder="https://mysite.com"
                           value={customDomainInput}
                           onChange={(e) => setCustomDomainInput(e.target.value)}
-                          style={{ width: '100%', padding: '8px', marginTop: '5px' }}
+                          style={{ width: '100%', padding: '4px' }}
                         />
-                        <Text variant="bodySm" tone="subdued">Example: https://www.yourwbbsite.com</Text>
-                      </div>
-                    )}
-                  </BlockStack>
-                )}
-
-                {!selectedProduct ? (
-                  // ... (rest of code)
-                  <Button id="btn-select-product" variant="primary" onClick={selectProduct}>
-                    Select Product to Pin
-                  </Button>
-                ) : (
-                  <BlockStack gap="400">
-                    <InlineStack align="space-between">
-                      <BlockStack gap="200">
-                        <Text variant="headingSm">{selectedProduct.title}</Text>
+                      )}
+                    </BlockStack>
+                  )}
+                </BlockStack>
+              </Card>
+            </Layout.Section>
+          </Layout>
+        ) : (
+          <Layout>
+            {/* Main Application Area */}
+            <Layout.Section>
+              <Card>
+                <BlockStack gap="500">
+                  {/* Header Area */}
+                  <InlineStack align="space-between" blockAlign="center">
+                    <BlockStack gap="100">
+                      <InlineStack gap="200" align="center">
+                        <Text as="h2" variant="headingXl">{selectedProduct.title}</Text>
+                        {selectedProduct.tags && selectedProduct.tags.includes("Pinterest Published") && (
+                          <Badge tone="success" size="large">Published</Badge>
+                        )}
+                      </InlineStack>
+                      <InlineStack gap="200">
                         <Button
                           id="btn-copy-title"
                           variant="plain"
-                          size="micro"
+                          icon={DuplicateIcon}
                           onClick={() => {
                             navigator.clipboard.writeText(selectedProduct.title);
-                            shopify.toast.show("Title copied to clipboard");
+                            shopify.toast.show("Title copied");
                           }}
                         >
                           Copy Title
                         </Button>
-                      </BlockStack>
-                      <BlockStack gap="200" align="end">
-                        {selectedProduct.tags && selectedProduct.tags.includes("Pinterest Published") && (
-                          <Badge tone="success">Pinterest Published</Badge>
-                        )}
-                        <Button id="btn-change-product" onClick={selectProduct}>Change Product</Button>
-                      </BlockStack>
-                    </InlineStack>
+                      </InlineStack>
+                    </BlockStack>
+                    <Button id="btn-change-product" onClick={selectProduct}>Change Product</Button>
+                  </InlineStack>
 
+                  <Divider />
 
+                  {/* Image Selection Area */}
+                  <BlockStack gap="300">
+                    <Text variant="headingMd">Select an image to Pin</Text>
+                    <Text variant="bodySm" tone="subdued">Click an image to open the cropper.</Text>
 
-                    <Text>Select an image to crop (2:3) and publish:</Text>
-
-                    <InlineStack gap="300" wrap>
+                    <InlineGrid columns={['oneThird', 'oneThird', 'oneThird', 'oneThird']} gap="400">
                       {selectedProduct.images.map((img, index) => (
                         <div
-                          id={`img-thumbnail-${index}`}
                           key={img.id}
+                          id={`img-thumbnail-${index}`}
+                          style={{
+                            cursor: 'pointer',
+                            border: '1px solid #e1e3e5',
+                            borderRadius: '8px',
+                            overflow: 'hidden',
+                            position: 'relative',
+                            aspectRatio: '1 / 1'
+                          }}
                           onClick={() => {
                             setSelectedImage(img);
                             setIsCropping(true);
                           }}
-                          style={{ cursor: 'pointer', border: '1px solid #ccc', padding: '2px' }}
                         >
-                          <Thumbnail
-                            source={img.originalSrc}
+                          <img
+                            src={img.originalSrc}
                             alt={img.altText || selectedProduct.title}
-                            size="large"
+                            style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
                           />
+                          <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: 'rgba(0,0,0,0.03)', padding: '4px', textAlign: 'center' }}>
+                            <Text variant="bodyXs" tone="subdued">Select</Text>
+                          </div>
                         </div>
                       ))}
-                    </InlineStack>
+                    </InlineGrid>
                   </BlockStack>
-                )}
-              </BlockStack>
-            </Card>
-          </Layout.Section>
-        </Layout>
+                </BlockStack>
+              </Card>
+            </Layout.Section>
+
+            {/* Sidebar Configuration */}
+            <Layout.Section variant="oneThird">
+              <Card>
+                <BlockStack gap="400">
+                  <InlineStack align="space-between">
+                    <Text variant="headingSm">Settings</Text>
+                    <Button
+                      icon={SettingsIcon}
+                      variant="plain"
+                      onClick={() => setShowSettings(!showSettings)}
+                      id="btn-toggle-settings"
+                      aria-label="Toggle Settings"
+                    />
+                  </InlineStack>
+
+                  {showSettings ? (
+                    <BlockStack gap="300">
+                      <Divider />
+                      <Text fontWeight="bold">Link Preference</Text>
+                      <BlockStack gap="200">
+                        <Button
+                          id="btn-mode-default"
+                          pressed={urlMode === 'default'}
+                          onClick={() => setUrlMode('default')}
+                          fullWidth
+                          textAlign="left"
+                        >
+                          Use Store URL (Default)
+                        </Button>
+                        <Button
+                          id="btn-mode-custom"
+                          pressed={urlMode === 'custom'}
+                          onClick={() => setUrlMode('custom')}
+                          fullWidth
+                          textAlign="left"
+                        >
+                          Use Custom Domain
+                        </Button>
+                      </BlockStack>
+
+                      {urlMode === 'custom' && (
+                        <Box padding="200" background="bg-surface-secondary" borderRadius="200">
+                          <BlockStack gap="200">
+                            <Text variant="bodySm">Base URL:</Text>
+                            <input
+                              id="input-custom-domain"
+                              value={customDomainInput}
+                              onChange={(e) => setCustomDomainInput(e.target.value)}
+                              style={{ width: '100%', padding: '6px', borderRadius: '4px', border: '1px solid #ccc' }}
+                            />
+                          </BlockStack>
+                        </Box>
+                      )}
+                    </BlockStack>
+                  ) : (
+                    <Text tone="subdued" variant="bodySm">
+                      Linking to: {urlMode === 'default' ? 'Online Store' : 'Custom Domain'}
+                    </Text>
+                  )}
+                </BlockStack>
+              </Card>
+            </Layout.Section>
+          </Layout>
+        )}
       </BlockStack>
 
       {/* Cropper Modal */}
