@@ -12,13 +12,23 @@ export class PinterestService {
     }
 
     async getBoards() {
+        console.log("PinterestService: Fetching boards...");
+        if (!this.accessToken) {
+            console.error("PinterestService: No Access Token found. Check .env or process.env loading.");
+            throw new Error("No Access Token configured");
+        }
+        console.log(`PinterestService: Using Token: ${this.accessToken.substring(0, 5)}...`);
+
         const response = await fetch(`${this.baseUrl}/boards`, {
             method: "GET",
             headers: await this.getHeaders(),
         });
 
         if (!response.ok) {
-            throw new Error(`Failed to fetch boards: ${response.statusText}`);
+            console.error(`PinterestService: Fetch Boards Failed: ${response.status} ${response.statusText}`);
+            const text = await response.text();
+            console.error(`PinterestService: Response Body: ${text}`);
+            throw new Error(`Pinterest API Error: ${text} (${response.status})`);
         }
 
         const data = await response.json();

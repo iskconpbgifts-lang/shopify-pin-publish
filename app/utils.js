@@ -1,8 +1,14 @@
 export const createImage = (url) =>
     new Promise((resolve, reject) => {
         const image = new Image()
-        image.addEventListener('load', () => resolve(image))
-        image.addEventListener('error', (error) => reject(error))
+        image.addEventListener('load', () => {
+            console.log("Image loaded successfully:", url);
+            resolve(image);
+        })
+        image.addEventListener('error', (error) => {
+            console.error("Image load error:", error);
+            reject(error);
+        })
         image.setAttribute('crossOrigin', 'anonymous') // needed to avoid cross-origin issues on CodeSandbox
         image.src = url
     })

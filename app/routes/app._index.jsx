@@ -1,6 +1,6 @@
+import { json } from "@remix-run/node";
 import { useEffect, useState, useCallback } from "react";
 import { useFetcher, useLoaderData } from "@remix-run/react";
-import { json } from "@remix-run/node";
 import {
   Page,
   Layout,
@@ -8,92 +8,79 @@ import {
   Card,
   Button,
   BlockStack,
-  Box,
   InlineStack,
   Thumbnail,
   Modal,
-  Select,
   Spinner,
   Banner
 } from "@shopify/polaris";
-import { TitleBar } from "@shopify/app-bridge-react";
+import { TitleBar, useAppBridge } from "@shopify/app-bridge-react";
 import { authenticate } from "../shopify.server";
-import { PinterestService } from "../services/pinterest.server";
+import { uploadImageToShopify } from "../services/shopify-files.server";
 import Cropper from "react-easy-crop";
 import getCroppedImg from "../utils";
 
 export const loader = async ({ request }) => {
-  await authenticate.admin(request);
-
-  try {
-    const service = new PinterestService();
-    const boards = await service.getBoards();
-    return json({ boards, error: null });
-  } catch (e) {
-    console.error("Pinterest Loader Error:", e);
-    return json({ boards: [], error: e.message });
-  }
+  const { session } = await authenticate.admin(request);
+  return json({ shop: session.shop });
 };
 
 export const action = async ({ request }) => {
-  const { admin } = await authenticate.admin(request);
-  const formData = await request.formData();
-
-  const boardId = formData.get("boardId");
-  const title = formData.get("title");
-  const description = formData.get("description");
-  const link = formData.get("link");
-  const imageBase64 = formData.get("image"); // Data URL
-
-  if (!boardId || !imageBase64) {
-    return json({ error: "Missing required fields" }, { status: 400 });
-  }
+  console.log("Index Action: Request received");
 
   try {
-    // Convert Base64 Data URL to Buffer/Blob for upload
-    // Format: "data:image/jpeg;base64,....."
+    const { admin } = await authenticate.admin(request);
+    // Use JSON parsing for better large payload handling
+    const { image: imageBase64 } = await request.json();
+
+    if (!imageBase64) {
+      return json({ error: "No image provided" }, { status: 400 });
+    }
+
     const base64Data = imageBase64.split(',')[1];
+    if (!base64Data) {
+      return json({ error: "Invalid image format" }, { status: 400 });
+    }
+
     const buffer = Buffer.from(base64Data, 'base64');
+    const filename = `pinterest-crop-${Date.now()}.jpg`;
 
-    const service = new PinterestService();
+    console.log("Index Action: Uploading...");
+    const file = await uploadImageToShopify(admin, buffer, filename);
+    console.log("Index Action: Success", file.url);
 
-    // 1. Register Media
-    const registration = await service.registerMedia();
-    const { upload_url, upload_parameters, media_id } = registration;
+    return json({
+      success: true,
+      imageUrl: file.url,
+      fileId: file.id
+    });
 
-    // 2. Upload to Pinterest S3
-    await service.uploadImage(upload_url, upload_parameters, buffer);
-
-    // 3. Wait for processing
-    await service.waitForMedia(media_id);
-
-    // 4. Create Pin
-    const pin = await service.createPin(boardId, title, description, link, media_id);
-
-    return json({ success: true, pin });
   } catch (e) {
-    console.error("Pinterest Action Error:", e);
+    console.error("Index Action Error:", e);
     return json({ error: e.message }, { status: 500 });
   }
 };
 
 export default function Index() {
-  const { boards, error: loaderError } = useLoaderData();
   const fetcher = useFetcher();
+  const shopify = useAppBridge();
+
+  const { shop } = useLoaderData();
 
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [selectedImage, setSelectedImage] = useState(null);
   const [isCropping, setIsCropping] = useState(false);
+  // State to track which product the image upload belongs to
+  const [uploadingForProductId, setUploadingForProductId] = useState(null);
 
   // Cropper State
   const [crop, setCrop] = useState({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(1);
   const [croppedAreaPixels, setCroppedAreaPixels] = useState(null);
 
-  // Publishing State
-  const [selectedBoard, setSelectedBoard] = useState(boards && boards.length > 0 ? boards[0].id : "");
+  // Product Info Fetcher
+  const productFetcher = useFetcher();
 
-  // Resource Picker
   const selectProduct = async () => {
     const selected = await window.shopify.resourcePicker({
       type: "product",
@@ -102,73 +89,175 @@ export default function Index() {
     });
 
     if (selected) {
-      setSelectedProduct(selected[0]);
+      const product = selected[0];
+      setSelectedProduct(product);
       setSelectedImage(null);
+      // Reset Pinterest State
+      setPinterestUrl(null);
+      setUploadingForProductId(null);
+
+      // Fetch full details (description)
+      productFetcher.load(`/app/product_info?id=${product.id}`);
     }
   };
+
+  // ... (useEffect hook for productFetcher) ...
+
+  useEffect(() => {
+    if (productFetcher.data && selectedProduct) {
+      setSelectedProduct(prev => ({ ...prev, ...productFetcher.data }));
+    }
+  }, [productFetcher.data]);
 
   const onCropComplete = useCallback((croppedArea, croppedAreaPixels) => {
     setCroppedAreaPixels(croppedAreaPixels);
   }, []);
 
   const handleCropAndPublish = async () => {
-    if (!selectedImage || !croppedAreaPixels) return;
+    console.log("handleCropAndPublish called");
+    console.log("selectedImage:", selectedImage);
+    console.log("croppedAreaPixels:", croppedAreaPixels);
+
+    if (!selectedImage || !croppedAreaPixels) {
+      console.warn("Missing image or crop data");
+      return;
+    }
+
+    // Set the current product ID as the target for this upload
+    setUploadingForProductId(selectedProduct.id);
 
     try {
+      console.log("Getting cropped image...");
       const croppedImageBase64 = await getCroppedImg(
         selectedImage.originalSrc,
         croppedAreaPixels
       );
-
-      // Submit to backend
+      // ... (rest of function) ...
+      console.log("Submitting to index action (JSON)...");
       fetcher.submit(
-        {
-          boardId: selectedBoard,
-          title: selectedProduct.title,
-          description: selectedProduct.descriptionHtml ? selectedProduct.descriptionHtml.replace(/<[^>]+>/g, '') : selectedProduct.title, // Strip HTML
-          link: selectedProduct.onlineStoreUrl || "",
-          image: croppedImageBase64
-        },
-        { method: "POST" }
+        { image: croppedImageBase64 },
+        { method: "POST", encType: "application/json", action: "/app?index" }
       );
-      setIsCropping(false); // Close modal
+      // ...
     } catch (e) {
-      console.error("Crop Error:", e);
+      // ...
     }
   };
 
-  const boardOptions = boards.map(b => ({ label: b.name, value: b.id }));
-  const isPublishing = fetcher.state === "submitting" || fetcher.state === "loading";
+  const [pinterestUrl, setPinterestUrl] = useState(null);
+  const isUploading = fetcher.state === "submitting" || fetcher.state === "loading";
 
+  // URL Preferences State
+  const [urlMode, setUrlMode] = useState("default"); // 'default' or 'custom'
+  const [customDomainInput, setCustomDomainInput] = useState("https://www.iskconpbgifts.com");
+
+  // Toggle for settings visibility
+  const [showSettings, setShowSettings] = useState(false);
+
+  // URL Generation Logic
   useEffect(() => {
-    if (fetcher.data?.success) {
-      shopify.toast.show("Pin published successfully!");
-      setSelectedProduct(null); // Reset
-      setIsCropping(false);
+    // Check if upload was successful AND if it belongs to the CURRENT selected product
+    if (fetcher.data?.success && fetcher.data?.imageUrl && uploadingForProductId === selectedProduct?.id) {
+      shopify.toast.show("Image uploaded!");
+      const mediaUrl = fetcher.data.imageUrl;
+      let productUrl;
+
+      // Determine Base URL based on user choice
+      if (urlMode === "custom" && customDomainInput) {
+        // Validation: remove trailing slash
+        const domain = customDomainInput.replace(/\/$/, "");
+        if (selectedProduct.handle) {
+          productUrl = `${domain}/products/${selectedProduct.handle}`;
+        } else {
+          productUrl = domain;
+        }
+      } else {
+        // Default (Shopify Store URL)
+        productUrl = selectedProduct.onlineStoreUrl;
+
+        // Fallback for default
+        if (!productUrl && selectedProduct.handle) {
+          productUrl = `https://${shop}/products/${selectedProduct.handle}`;
+        }
+        if (!productUrl) {
+          productUrl = `https://${shop}`;
+        }
+      }
+
+      // Description logic
+      const rawDesc = selectedProduct.descriptionHtml ? selectedProduct.descriptionHtml.replace(/<[^>]+>/g, '').trim() : "";
+      const description = (rawDesc || selectedProduct.title || "Check out this product!").substring(0, 490);
+
+      console.log("Generating Pinterest URL with:", { productUrl, mediaUrl });
+      const url = `https://www.pinterest.com/pin/create/button/?url=${encodeURIComponent(productUrl)}&media=${encodeURIComponent(mediaUrl)}&description=${encodeURIComponent(description)}`;
+
+      setPinterestUrl(url);
     } else if (fetcher.data?.error) {
-      shopify.toast.show(`Error: ${fetcher.data.error}`);
+      shopify.toast.show(`Upload Error: ${fetcher.data.error}`);
     }
-  }, [fetcher.data]);
+  }, [fetcher.data, selectedProduct, urlMode, customDomainInput, shop]);
+
+  const openPinterest = () => {
+    if (pinterestUrl) {
+      window.open(pinterestUrl, '_blank');
+      setIsCropping(false);
+      setPinterestUrl(null);
+      setSelectedImage(null);
+    }
+  };
+
+  // ... (render) ...
 
   return (
     <Page>
       <TitleBar title="Pin Publish" />
       <BlockStack gap="500">
-
-        {loaderError && (
-          <Banner tone="critical">
-            <p>Failed to load Pinterest configuration. Please check your API Token.</p>
-            <p>Error: {loaderError}</p>
-          </Banner>
-        )}
-
         <Layout>
           <Layout.Section>
             <Card>
               <BlockStack gap="400">
                 <Text as="h2" variant="headingMd">Pinterest Publisher</Text>
 
+                {/* Settings Toggle */}
+                <Button onClick={() => setShowSettings(!showSettings)} variant="plain">
+                  {showSettings ? "Hide Settings" : "Show URL Settings"}
+                </Button>
+
+                {showSettings && (
+                  <BlockStack gap="300">
+                    <Text variant="bodyMd" fontWeight="bold">Link Destination:</Text>
+                    <InlineStack gap="400">
+                      <Button
+                        pressed={urlMode === 'default'}
+                        onClick={() => setUrlMode('default')}
+                      >
+                        Default Store URL
+                      </Button>
+                      <Button
+                        pressed={urlMode === 'custom'}
+                        onClick={() => setUrlMode('custom')}
+                      >
+                        Custom Domain
+                      </Button>
+                    </InlineStack>
+
+                    {urlMode === 'custom' && (
+                      <div style={{ marginTop: '10px' }}>
+                        <Text variant="headingSm">Custom Domain Base URL:</Text>
+                        <input
+                          type="text"
+                          value={customDomainInput}
+                          onChange={(e) => setCustomDomainInput(e.target.value)}
+                          style={{ width: '100%', padding: '8px', marginTop: '5px' }}
+                        />
+                        <Text variant="bodySm" tone="subdued">Example: https://www.yourwbbsite.com</Text>
+                      </div>
+                    )}
+                  </BlockStack>
+                )}
+
                 {!selectedProduct ? (
+                  // ... (rest of code)
                   <Button variant="primary" onClick={selectProduct}>
                     Select Product to Pin
                   </Button>
@@ -178,6 +267,8 @@ export default function Index() {
                       <Text variant="headingSm">{selectedProduct.title}</Text>
                       <Button onClick={selectProduct}>Change Product</Button>
                     </InlineStack>
+
+
 
                     <Text>Select an image to crop (2:3) and publish:</Text>
 
@@ -203,15 +294,6 @@ export default function Index() {
                 )}
               </BlockStack>
             </Card>
-
-            {fetcher.data?.pin && (
-              <Card>
-                <Banner tone="success" title="Pin Created">
-                  <p>Pin ID: {fetcher.data.pin.id}</p>
-                </Banner>
-              </Card>
-            )}
-
           </Layout.Section>
         </Layout>
       </BlockStack>
@@ -220,41 +302,45 @@ export default function Index() {
       <Modal
         open={isCropping}
         onClose={() => setIsCropping(false)}
-        title="Crop Image for Pinterest (2:3)"
+        title={pinterestUrl ? "Ready to Pin!" : "Crop Image for Pinterest (2:3)"}
         primaryAction={{
-          content: isPublishing ? <Spinner size="small" /> : "Crop & Publish",
-          onAction: handleCropAndPublish,
-          disabled: isPublishing
+          content: pinterestUrl ? "Open Pinterest" : (isUploading ? <Spinner size="small" /> : "Next: Upload Image"),
+          onAction: pinterestUrl ? openPinterest : handleCropAndPublish,
+          disabled: isUploading && !pinterestUrl
         }}
         secondaryActions={[
           {
             content: "Cancel",
-            onAction: () => setIsCropping(false),
+            onAction: () => { setIsCropping(false); setPinterestUrl(null); },
           },
         ]}
       >
         <Modal.Section>
           <BlockStack gap="400">
-            <div style={{ position: 'relative', width: '100%', height: 400, background: '#333' }}>
-              {selectedImage && (
-                <Cropper
-                  image={selectedImage.originalSrc}
-                  crop={crop}
-                  zoom={zoom}
-                  aspect={2 / 3}
-                  onCropChange={setCrop}
-                  onZoomChange={setZoom}
-                  onCropComplete={onCropComplete}
-                />
-              )}
-            </div>
-
-            <Select
-              label="Select Pinterest Board"
-              options={boardOptions}
-              onChange={setSelectedBoard}
-              value={selectedBoard}
-            />
+            {pinterestUrl ? (
+              <Banner tone="success" title="Image Uploaded">
+                <p>Click "Open Pinterest" to finish posting on Pinterest.</p>
+              </Banner>
+            ) : (
+              <div style={{ position: 'relative', width: '100%', height: 400, background: '#333' }}>
+                {selectedImage && (
+                  <Cropper
+                    image={selectedImage.originalSrc}
+                    crop={crop}
+                    zoom={zoom}
+                    aspect={2 / 3}
+                    onCropChange={setCrop}
+                    onZoomChange={setZoom}
+                    onCropComplete={onCropComplete}
+                  />
+                )}
+              </div>
+            )}
+            {!pinterestUrl && (
+              <Text variant="bodySm" tone="subdued">
+                Clicking 'Next' will upload this image.
+              </Text>
+            )}
           </BlockStack>
         </Modal.Section>
       </Modal>
