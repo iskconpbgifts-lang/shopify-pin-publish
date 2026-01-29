@@ -219,7 +219,7 @@ export default function Index() {
                 <Text as="h2" variant="headingMd">Pinterest Publisher</Text>
 
                 {/* Settings Toggle */}
-                <Button onClick={() => setShowSettings(!showSettings)} variant="plain">
+                <Button id="btn-toggle-settings" onClick={() => setShowSettings(!showSettings)} variant="plain">
                   {showSettings ? "Hide Settings" : "Show URL Settings"}
                 </Button>
 
@@ -228,12 +228,14 @@ export default function Index() {
                     <Text variant="bodyMd" fontWeight="bold">Link Destination:</Text>
                     <InlineStack gap="400">
                       <Button
+                        id="btn-mode-default"
                         pressed={urlMode === 'default'}
                         onClick={() => setUrlMode('default')}
                       >
                         Default Store URL
                       </Button>
                       <Button
+                        id="btn-mode-custom"
                         pressed={urlMode === 'custom'}
                         onClick={() => setUrlMode('custom')}
                       >
@@ -245,6 +247,7 @@ export default function Index() {
                       <div style={{ marginTop: '10px' }}>
                         <Text variant="headingSm">Custom Domain Base URL:</Text>
                         <input
+                          id="input-custom-domain"
                           type="text"
                           value={customDomainInput}
                           onChange={(e) => setCustomDomainInput(e.target.value)}
@@ -258,14 +261,27 @@ export default function Index() {
 
                 {!selectedProduct ? (
                   // ... (rest of code)
-                  <Button variant="primary" onClick={selectProduct}>
+                  <Button id="btn-select-product" variant="primary" onClick={selectProduct}>
                     Select Product to Pin
                   </Button>
                 ) : (
                   <BlockStack gap="400">
                     <InlineStack align="space-between">
-                      <Text variant="headingSm">{selectedProduct.title}</Text>
-                      <Button onClick={selectProduct}>Change Product</Button>
+                      <BlockStack gap="200">
+                        <Text variant="headingSm">{selectedProduct.title}</Text>
+                        <Button
+                          id="btn-copy-title"
+                          variant="plain"
+                          size="micro"
+                          onClick={() => {
+                            navigator.clipboard.writeText(selectedProduct.title);
+                            shopify.toast.show("Title copied to clipboard");
+                          }}
+                        >
+                          Copy Title
+                        </Button>
+                      </BlockStack>
+                      <Button id="btn-change-product" onClick={selectProduct}>Change Product</Button>
                     </InlineStack>
 
 
@@ -273,8 +289,9 @@ export default function Index() {
                     <Text>Select an image to crop (2:3) and publish:</Text>
 
                     <InlineStack gap="300" wrap>
-                      {selectedProduct.images.map((img) => (
+                      {selectedProduct.images.map((img, index) => (
                         <div
+                          id={`img-thumbnail-${index}`}
                           key={img.id}
                           onClick={() => {
                             setSelectedImage(img);
@@ -304,6 +321,7 @@ export default function Index() {
         onClose={() => setIsCropping(false)}
         title={pinterestUrl ? "Ready to Pin!" : "Crop Image for Pinterest (2:3)"}
         primaryAction={{
+          id: "btn-modal-primary",
           content: pinterestUrl ? "Open Pinterest" : (isUploading ? <Spinner size="small" /> : "Next: Upload Image"),
           onAction: pinterestUrl ? openPinterest : handleCropAndPublish,
           disabled: isUploading && !pinterestUrl
@@ -335,6 +353,51 @@ export default function Index() {
                   />
                 )}
               </div>
+            )}
+
+            {/* AI Agent Controls for Cropping */}
+            {!pinterestUrl && (
+              <BlockStack gap="300">
+                <Text variant="bodyMd" fontWeight="bold">Manual Adjustments (AI Friendly):</Text>
+                <InlineStack gap="400">
+                  <div style={{ flex: 1 }}>
+                    <Text>Zoom:</Text>
+                    <input
+                      id="input-crop-zoom"
+                      type="number"
+                      step="0.1"
+                      min="1"
+                      max="3"
+                      value={zoom}
+                      onChange={(e) => setZoom(parseFloat(e.target.value))}
+                      style={{ width: '100%', padding: '5px' }}
+                    />
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <Text>Crop X:</Text>
+                    <input
+                      id="input-crop-x"
+                      type="number"
+                      value={crop.x}
+                      onChange={(e) => setCrop({ ...crop, x: parseFloat(e.target.value) })}
+                      style={{ width: '100%', padding: '5px' }}
+                    />
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <Text>Crop Y:</Text>
+                    <input
+                      id="input-crop-y"
+                      type="number"
+                      value={crop.y}
+                      onChange={(e) => setCrop({ ...crop, y: parseFloat(e.target.value) })}
+                      style={{ width: '100%', padding: '5px' }}
+                    />
+                  </div>
+                </InlineStack>
+                <Text variant="bodySm" tone="subdued">
+                  Use these inputs to precisely adjust the crop if drag-and-drop is difficult.
+                </Text>
+              </BlockStack>
             )}
             {!pinterestUrl && (
               <Text variant="bodySm" tone="subdued">
