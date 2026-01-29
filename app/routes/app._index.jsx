@@ -85,7 +85,8 @@ export default function Index() {
     const selected = await window.shopify.resourcePicker({
       type: "product",
       action: "select",
-      multiple: false
+      multiple: false,
+      query: "status:active"
     });
 
     if (selected) {
