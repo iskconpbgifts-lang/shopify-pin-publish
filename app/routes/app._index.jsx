@@ -147,6 +147,13 @@ export default function Index() {
       {},
       { method: "POST", action: "/app/reset_all_tags" }
     );
+    // Clear storage on full reset
+    localStorage.removeItem("pin-publish-queue");
+    localStorage.removeItem("pin-publish-index");
+    localStorage.removeItem("pin-publish-modal-open");
+    localStorage.removeItem("pin-publish-selected-image");
+    localStorage.removeItem("pin-publish-pinterest-url");
+    setProductQueue([]);
     shopify.toast.show("Resetting ALL published statuses...");
   };
 
@@ -166,12 +173,11 @@ export default function Index() {
     [],
   );
 
-  // Initial Load for AI Publisher if default
-  useEffect(() => {
-    if (selectedTab === 1) {
-      unpublishedFetcher.load("/app/unpublished_products");
-    }
-  }, []); // Run once on mount
+  // Initial Load for AI Publisher if default (and Restore State)
+  // REMOVED INITIAL LOAD FROM HERE -- MOVED DOWN
+
+  // Persist State
+  // REMOVED PERSISTENCE FROM HERE -- MOVED DOWN
 
   const tabs = [
     {
@@ -422,6 +428,70 @@ export default function Index() {
     }
   }, [fetcher.data, selectedProduct, urlMode, customDomainInput, shop]);
 
+  // --- EFFECT HOISTING FIX ---
+  // Initial Load for AI Publisher if default (and Restore State)
+  useEffect(() => {
+    const savedQueue = localStorage.getItem("pin-publish-queue");
+    const savedIndex = localStorage.getItem("pin-publish-index");
+    const savedTab = localStorage.getItem("pin-publish-tab");
+
+    // Modal State
+    const savedModalOpen = localStorage.getItem("pin-publish-modal-open");
+    const savedImage = localStorage.getItem("pin-publish-selected-image");
+    const savedPinUrl = localStorage.getItem("pin-publish-pinterest-url");
+
+    if (savedQueue) {
+      try {
+        const parsedQueue = JSON.parse(savedQueue);
+        if (parsedQueue.length > 0) {
+          setProductQueue(parsedQueue);
+          if (savedIndex) setCurrentQueueIndex(parseInt(savedIndex, 10));
+          if (savedTab) setSelectedTab(parseInt(savedTab, 10));
+
+          // Restore Modal
+          if (savedModalOpen === "true" && savedImage) {
+            setSelectedImage(JSON.parse(savedImage));
+            setIsCropping(true);
+            if (savedPinUrl) setPinterestUrl(savedPinUrl);
+          }
+
+          shopify.toast.show("Session restored!");
+          return; // Skip fetch if restoring
+        }
+      } catch (e) {
+        console.error("Failed to parse saved queue", e);
+      }
+    }
+
+    if (selectedTab === 1) {
+      unpublishedFetcher.load("/app/unpublished_products");
+    }
+  }, []); // Run once on mount
+
+  // Persist State
+  useEffect(() => {
+    if (productQueue.length > 0) {
+      localStorage.setItem("pin-publish-queue", JSON.stringify(productQueue));
+      localStorage.setItem("pin-publish-index", currentQueueIndex.toString());
+    }
+    localStorage.setItem("pin-publish-tab", selectedTab.toString());
+
+    // Persist Modal State
+    localStorage.setItem("pin-publish-modal-open", isCropping.toString());
+    if (selectedImage) {
+      localStorage.setItem("pin-publish-selected-image", JSON.stringify(selectedImage));
+    } else {
+      localStorage.removeItem("pin-publish-selected-image");
+    }
+    if (pinterestUrl) {
+      localStorage.setItem("pin-publish-pinterest-url", pinterestUrl);
+    } else {
+      localStorage.removeItem("pin-publish-pinterest-url");
+    }
+
+  }, [productQueue, currentQueueIndex, selectedTab, isCropping, selectedImage, pinterestUrl]);
+  // ---------------------------
+
   const openPinterest = () => {
     if (pinterestUrl) {
       window.open(pinterestUrl, '_blank');
@@ -652,24 +722,16 @@ export default function Index() {
           onAction: pinterestUrl ? openPinterest : handleCropAndPublish,
           disabled: isUploading && !pinterestUrl
         }}
-        secondaryActions={
-          pinterestUrl ? [
-            {
-              content: "Load Next Product",
-              onAction: handleNext,
-              // disabled: selectedTab === 0 // Force enable for now to be safe
-            },
-            {
-              content: "Close",
-              onAction: () => { setIsCropping(false); setPinterestUrl(null); },
-            }
-          ] : [
-            {
-              content: "Cancel",
-              onAction: () => { setIsCropping(false); setPinterestUrl(null); },
-            },
-          ]
-        }
+        secondaryActions={[
+          {
+            content: "Load Next Product",
+            onAction: handleNext,
+          },
+          {
+            content: pinterestUrl ? "Close" : "Cancel",
+            onAction: () => { setIsCropping(false); setPinterestUrl(null); },
+          }
+        ]}
       >
         <Modal.Section>
           <BlockStack gap="400">
