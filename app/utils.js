@@ -38,7 +38,8 @@ export default async function getCroppedImg(
     imageSrc,
     pixelCrop,
     rotation = 0,
-    flip = { horizontal: false, vertical: false }
+    flip = { horizontal: false, vertical: false },
+    watermark = null
 ) {
     const image = await createImage(imageSrc)
     const canvas = document.createElement('canvas')
@@ -86,8 +87,76 @@ export default async function getCroppedImg(
     // paste generated rotate image at the top left corner
     ctx.putImageData(data, 0, 0)
 
+    // --- WATERMARK LOGIC ---
+    // DEBUG:
+    console.log("getCroppedImg: Checking Watermark...", watermark);
+
+    if (watermark) {
+        // Normalize 'image' to 'src' if needed (handle both state formats)
+        // We do this check independently of whether .src exists yet
+        if (watermark.image && !watermark.src) {
+            console.log("Watermark has 'image' prop, fixing to 'src'...");
+            watermark.src = watermark.image;
+        }
+
+        if (watermark.src) {
+            console.log("getCroppedImg: Watermark found, applying...");
+
+            try {
+                const wmImg = await createImage(watermark.src);
+
+                // 1. Calculate Watermark Size
+                // Scale relative to the *output* canvas width
+                const wmDisplayWidth = canvas.width * (watermark.scale || 0.2);
+                const aspectRatio = wmImg.height / wmImg.width;
+                const wmDisplayHeight = wmDisplayWidth * aspectRatio;
+
+                // 2. Calculate Position
+                const padding = canvas.width * 0.03; // 3% padding
+                let x = 0;
+                let y = 0;
+
+                const pos = watermark.position || 'bottom-right';
+
+                switch (pos) {
+                    case 'top-left':
+                        x = padding;
+                        y = padding;
+                        break;
+                    case 'top-right':
+                        x = canvas.width - wmDisplayWidth - padding;
+                        y = padding;
+                        break;
+                    case 'center':
+                        x = (canvas.width - wmDisplayWidth) / 2;
+                        y = (canvas.height - wmDisplayHeight) / 2;
+                        break;
+                    case 'bottom-left':
+                        x = padding;
+                        y = canvas.height - wmDisplayHeight - padding;
+                        break;
+                    case 'bottom-right':
+                    default:
+                        x = canvas.width - wmDisplayWidth - padding;
+                        y = canvas.height - wmDisplayHeight - padding;
+                        break;
+                }
+
+                // 3. Draw Watermark
+                ctx.save();
+                ctx.globalAlpha = watermark.opacity ?? 0.8;
+                ctx.drawImage(wmImg, x, y, wmDisplayWidth, wmDisplayHeight);
+                ctx.restore();
+
+            } catch (e) {
+                console.error("Failed to apply watermark", e);
+            }
+        }
+    }
+
     // As Base64 string
     return canvas.toDataURL('image/jpeg');
+    // As Blob
 
     // As Blob
     // return new Promise((resolve, reject) => {

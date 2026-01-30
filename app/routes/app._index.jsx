@@ -139,6 +139,15 @@ export default function Index() {
   const [managerTab, setManagerTab] = useState(0); // 0=Published, 1=Ignored
   const managerFetcher = useFetcher(); // Fetcher for Manager Tab
 
+  // Watermark State
+  const [watermarkSettings, setWatermarkSettings] = useState({
+    enabled: false,
+    image: null, // Base64
+    opacity: 0.8, // 0-1
+    scale: 0.2,   // 0-1
+    position: 'bottom-right' // top-left, top-right, center, bottom-left, bottom-right
+  });
+
   // Load Collections on Mount
   useEffect(() => {
     collectionFetcher.load("/app/collections");
@@ -229,6 +238,13 @@ export default function Index() {
       accessibilityLabel: 'Manage published and ignored products',
       panelID: 'manager-panel',
     },
+    {
+      id: 'settings-tab',
+      content: 'Settings',
+      accessibilityLabel: 'App configuration',
+      panelID: 'settings-panel',
+    }
+
   ];
 
   // Auto-populate queue from unpublished fetcher
@@ -429,10 +445,18 @@ export default function Index() {
 
     try {
       console.log("Getting cropped image...");
+
+      const wmConfig = watermarkSettings.enabled ? watermarkSettings : null;
+      console.log("handleCropAndPublish: Watermark Config:", wmConfig);
+
       const croppedImageBase64 = await getCroppedImg(
         selectedImage.originalSrc,
-        croppedAreaPixels
+        croppedAreaPixels,
+        0,
+        { horizontal: false, vertical: false },
+        wmConfig
       );
+
       // ... (rest of function) ...
       console.log("Submitting to index action (JSON)...");
       fetcher.submit(
@@ -576,6 +600,14 @@ export default function Index() {
             setIsCropping(true); // Force open if we have a URL waiting
           }
 
+          // Restore Watermark
+          const savedWatermark = localStorage.getItem("pin-publish-watermark");
+          if (savedWatermark) {
+            try {
+              setWatermarkSettings(JSON.parse(savedWatermark));
+            } catch (e) { console.error("Failed to parse saved watermark", e); }
+          }
+
           shopify.toast.show("Session restored!");
           hasRestored = true;
         }
@@ -630,8 +662,12 @@ export default function Index() {
     localStorage.setItem("pin-publish-url-mode", urlMode);
     localStorage.setItem("pin-publish-custom-domain", customDomainInput);
     localStorage.setItem("pin-publish-collection-filter", collectionFilter);
+    // Persist Watermark
+    if (watermarkSettings) {
+      localStorage.setItem("pin-publish-watermark", JSON.stringify(watermarkSettings));
+    }
 
-  }, [productQueue, currentQueueIndex, selectedTab, isCropping, selectedImage, pinterestUrl, isRestored, urlMode, customDomainInput, collectionFilter]);
+  }, [productQueue, currentQueueIndex, selectedTab, isCropping, selectedImage, pinterestUrl, isRestored, urlMode, customDomainInput, collectionFilter, watermarkSettings]);
   // ---------------------------
 
   const openPinterest = () => {
@@ -709,7 +745,126 @@ export default function Index() {
             <Box paddingBlockStart="400">
 
               {/* State: No Product Selected */}
-              {!selectedProduct ? (
+              {selectedTab === 3 ? (
+                <Layout>
+                  <Layout.Section>
+                    <Card>
+                      <BlockStack gap="500">
+                        <Text variant="headingLg" as="h2">Watermark Settings</Text>
+                        <Box padding="400" background="bg-surface-secondary" borderRadius="200">
+                          <BlockStack gap="400">
+                            <InlineStack align="space-between" blockAlign="center">
+                              <Text variant="headingMd">Enable Watermark</Text>
+                              <Button
+                                variant={watermarkSettings.enabled ? "primary" : "secondary"}
+                                pressed={watermarkSettings.enabled}
+                                onClick={() => setWatermarkSettings(prev => ({ ...prev, enabled: !prev.enabled }))}
+                              >
+                                {watermarkSettings.enabled ? "On" : "Off"}
+                              </Button>
+                            </InlineStack>
+
+                            {watermarkSettings.enabled && (
+                              <>
+                                <Divider />
+                                <BlockStack gap="200">
+                                  <Text fontWeight="bold">Upload Logo</Text>
+                                  <input
+                                    type="file"
+                                    accept="image/png, image/jpeg"
+                                    onChange={(e) => {
+                                      const file = e.target.files[0];
+                                      if (file) {
+                                        const reader = new FileReader();
+                                        reader.onloadend = () => {
+                                          setWatermarkSettings(prev => ({ ...prev, image: reader.result }));
+                                        };
+                                        reader.readAsDataURL(file);
+                                      }
+                                    }}
+                                  />
+                                  {watermarkSettings.image && (
+                                    <div style={{ marginTop: '10px', padding: '10px', border: '1px dashed #ccc', borderRadius: '4px', textAlign: 'center' }}>
+                                      <img src={watermarkSettings.image} alt="Watermark Preview" style={{ maxHeight: '100px', maxWidth: '100%' }} />
+                                    </div>
+                                  )}
+                                </BlockStack>
+
+                                <InlineGrid columns={2} gap="400">
+                                  <BlockStack gap="200">
+                                    <Text>Opacity ({watermarkSettings.opacity})</Text>
+                                    <input
+                                      type="range"
+                                      min="0.1"
+                                      max="1"
+                                      step="0.01"
+                                      value={watermarkSettings.opacity}
+                                      onChange={(e) => setWatermarkSettings(prev => ({ ...prev, opacity: parseFloat(e.target.value) }))}
+                                      style={{ width: '100%' }}
+                                    />
+                                  </BlockStack>
+                                  <BlockStack gap="200">
+                                    <Text>Scale ({watermarkSettings.scale})</Text>
+                                    <input
+                                      type="range"
+                                      min="0.01"
+                                      max="0.9"
+                                      step="0.01"
+                                      value={watermarkSettings.scale}
+                                      onChange={(e) => setWatermarkSettings(prev => ({ ...prev, scale: parseFloat(e.target.value) }))}
+                                      style={{ width: '100%' }}
+                                    />
+                                  </BlockStack>
+                                </InlineGrid>
+
+                                <BlockStack gap="200">
+                                  <Text>Position</Text>
+                                  <InlineStack gap="200" wrap>
+                                    {['top-left', 'top-right', 'center', 'bottom-left', 'bottom-right'].map(pos => (
+                                      <Button
+                                        key={pos}
+                                        size="micro"
+                                        pressed={watermarkSettings.position === pos}
+                                        onClick={() => setWatermarkSettings(prev => ({ ...prev, position: pos }))}
+                                      >
+                                        {pos}
+                                      </Button>
+                                    ))}
+                                  </InlineStack>
+                                </BlockStack>
+                              </>
+                            )}
+                          </BlockStack>
+                        </Box>
+
+                        <Divider />
+
+                        <Text variant="headingMd">Link & Danger Zone</Text>
+                        <Box padding="400" background="bg-surface-secondary" borderRadius="200">
+                          <BlockStack gap="400">
+                            <Text fontWeight="bold">Link Preference</Text>
+                            <InlineStack gap="200">
+                              <Button pressed={urlMode === 'default'} onClick={() => setUrlMode('default')}>Store URL</Button>
+                              <Button pressed={urlMode === 'custom'} onClick={() => setUrlMode('custom')}>Custom Domain</Button>
+                            </InlineStack>
+                            {urlMode === 'custom' && (
+                              <input
+                                value={customDomainInput}
+                                onChange={(e) => setCustomDomainInput(e.target.value)}
+                                placeholder="https://mysite.com"
+                                style={{ padding: '8px', width: '100%', borderRadius: '4px', border: '1px solid #ccc' }}
+                              />
+                            )}
+                            <Divider />
+                            <Button tone="critical" onClick={handleResetAll}>Reset ALL Published Tags</Button>
+                          </BlockStack>
+                        </Box>
+
+                      </BlockStack>
+                    </Card>
+                  </Layout.Section>
+                </Layout>
+              ) : !selectedProduct ? (
                 <Layout>
                   <Layout.Section>
                     <Card>
@@ -724,7 +879,15 @@ export default function Index() {
                         {selectedTab === 1 ? (
                           <BlockStack gap="400">
                             <p>Auto-load unpublished products. Optionally filter by type.</p>
-                            <InlineStack gap="300">
+                            <InlineStack gap="300" align="center">
+                              <div style={{ width: '250px' }}>
+                                <Select
+                                  label="Filter by Collection"
+                                  options={[{ label: "All Collections", value: "" }, ...collections]}
+                                  value={collectionFilter}
+                                  onChange={(value) => setCollectionFilter(value)}
+                                />
+                              </div>
                               <Button
                                 variant="primary"
                                 onClick={() => {
@@ -748,31 +911,7 @@ export default function Index() {
                   </Layout.Section>
                   <Layout.Section variant="oneThird">
                     <Card>
-                      <BlockStack gap="200">
-                        <Text as="h2" variant="headingSm">Configuration</Text>
-                        <Button id="btn-show-settings-empty" variant="plain" onClick={() => setShowSettings(!showSettings)}>
-                          {showSettings ? "Hide Settings" : "Configure App Settings"}
-                        </Button>
-                        {showSettings && (
-                          <BlockStack gap="200">
-                            <Divider />
-                            <Text variant="bodySm" fontWeight="bold">Link Destination</Text>
-                            <InlineStack gap="200">
-                              <Button size="micro" pressed={urlMode === 'default'} onClick={() => setUrlMode('default')} id="btn-mode-default-sm">Store URL</Button>
-                              <Button size="micro" pressed={urlMode === 'custom'} onClick={() => setUrlMode('custom')} id="btn-mode-custom-sm">Custom</Button>
-                            </InlineStack>
-                            {urlMode === 'custom' && (
-                              <input
-                                id="input-custom-domain-sm"
-                                placeholder="https://mysite.com"
-                                value={customDomainInput}
-                                onChange={(e) => setCustomDomainInput(e.target.value)}
-                                style={{ width: '100%', padding: '4px' }}
-                              />
-                            )}
-                          </BlockStack>
-                        )}
-
+                      <BlockStack gap="200" align="start">
                         {/* MANAGER TAB UI */}
                         {selectedTab === 2 && (
                           <BlockStack gap="400">
@@ -786,6 +925,7 @@ export default function Index() {
                               fitted
                             />
                             <Card>
+                              {/* Manager List Content */}
                               <ResourceList
                                 resourceName={{ singular: 'product', plural: 'products' }}
                                 items={managerFetcher.data?.products || []}
@@ -829,6 +969,35 @@ export default function Index() {
                             </Card>
                           </BlockStack>
                         )}
+
+                        {/* Configuration Section - Moved to Bottom */}
+                        <Box paddingBlockStart="400">
+                          <BlockStack gap="200">
+                            <Button id="btn-show-settings-empty" variant="tertiary" onClick={() => setShowSettings(!showSettings)} fullWidth textAlign="start" disclosure={showSettings ? "up" : "down"}>
+                              {showSettings ? "Hide Quick Settings" : "Show Quick Settings"}
+                            </Button>
+                            {showSettings && (
+                              <Box padding="300" background="bg-surface-secondary" borderRadius="200">
+                                <BlockStack gap="200">
+                                  <Text variant="headingXs" as="h6">Link Destination</Text>
+                                  <InlineGrid columns={2} gap="200">
+                                    <Button size="micro" pressed={urlMode === 'default'} onClick={() => setUrlMode('default')} id="btn-mode-default-sm">Store URL</Button>
+                                    <Button size="micro" pressed={urlMode === 'custom'} onClick={() => setUrlMode('custom')} id="btn-mode-custom-sm">Custom</Button>
+                                  </InlineGrid>
+                                  {urlMode === 'custom' && (
+                                    <input
+                                      id="input-custom-domain-sm"
+                                      placeholder="https://mysite.com"
+                                      value={customDomainInput}
+                                      onChange={(e) => setCustomDomainInput(e.target.value)}
+                                      style={{ width: '100%', padding: '6px', borderRadius: '4px', border: '1px solid #dcdcdc' }}
+                                    />
+                                  )}
+                                </BlockStack>
+                              </Box>
+                            )}
+                          </BlockStack>
+                        </Box>
                       </BlockStack>
                     </Card>
                   </Layout.Section>
@@ -882,24 +1051,13 @@ export default function Index() {
                               </BlockStack>
                               <InlineStack gap="300" align="center">
                                 {selectedTab === 1 && (
-                                  <div style={{ width: '200px' }}>
-                                    <Select
-                                      label="Collection"
-                                      labelHidden
-                                      options={collections}
-                                      value={collectionFilter}
-                                      onChange={(value) => {
-                                        setCollectionFilter(value);
-                                        setProductQueue([]);
-                                        setCurrentQueueIndex(0);
-                                        setSelectedProduct(null);
-                                        const params = new URLSearchParams();
-                                        if (value) params.append("collection_id", value);
-                                        unpublishedFetcher.load(`/app/unpublished_products?${params.toString()}`);
-                                        shopify.toast.show("Loading Collection...");
-                                      }}
-                                    />
-                                  </div>
+                                  <Button onClick={() => {
+                                    setProductQueue([]);
+                                    setSelectedProduct(null);
+                                    setCurrentQueueIndex(0);
+                                  }}>
+                                    Change Collection
+                                  </Button>
                                 )}
                                 {selectedTab !== 1 && (
                                   <Button id="btn-change-product" onClick={selectProduct}>Change Product</Button>
@@ -954,79 +1112,8 @@ export default function Index() {
                     </Card>
                   </Layout.Section>
 
-                  {/* Sidebar Configuration */}
-                  <Layout.Section variant="oneThird">
-                    <Card>
-                      <BlockStack gap="400">
-                        <InlineStack align="space-between">
-                          <Text variant="headingSm">Settings</Text>
-                          <Button
-                            icon={SettingsIcon}
-                            variant="plain"
-                            onClick={() => setShowSettings(!showSettings)}
-                            id="btn-toggle-settings"
-                            aria-label="Toggle Settings"
-                          />
-                        </InlineStack>
-
-                        {showSettings ? (
-                          <BlockStack gap="300">
-                            <Divider />
-                            <Text fontWeight="bold">Link Preference</Text>
-                            <BlockStack gap="200">
-                              <Button
-                                id="btn-mode-default"
-                                pressed={urlMode === 'default'}
-                                onClick={() => setUrlMode('default')}
-                                fullWidth
-                                textAlign="left"
-                              >
-                                Use Store URL (Default)
-                              </Button>
-                              <Button
-                                id="btn-mode-custom"
-                                pressed={urlMode === 'custom'}
-                                onClick={() => setUrlMode('custom')}
-                                fullWidth
-                                textAlign="left"
-                              >
-                                Use Custom Domain
-                              </Button>
-                            </BlockStack>
-
-                            {urlMode === 'custom' && (
-                              <Box padding="200" background="bg-surface-secondary" borderRadius="200">
-                                <BlockStack gap="200">
-                                  <Text variant="bodySm">Base URL:</Text>
-                                  <input
-                                    id="input-custom-domain"
-                                    value={customDomainInput}
-                                    onChange={(e) => setCustomDomainInput(e.target.value)}
-                                    style={{ width: '100%', padding: '6px', borderRadius: '4px', border: '1px solid #ccc' }}
-                                  />
-                                </BlockStack>
-                              </Box>
-                            )}
-
-
-
-                            <Divider />
-                            <Text fontWeight="bold">Danger Zone</Text>
-                            <Button tone="critical" onClick={handleResetAll} fullWidth>
-                              Reset ALL Published Tags (Batch)
-                            </Button>
-                          </BlockStack>
-                        ) : (
-                          <Text tone="subdued" variant="bodySm">
-                            Linking to: {urlMode === 'default' ? 'Online Store' : 'Custom Domain'}
-                          </Text>
-                        )}
-
-
-
-                      </BlockStack>
-                    </Card>
-                  </Layout.Section>
+                  {/* Sidebar Configuration REMOVED to allow full width and reduce clutter */}
+                  {/* Settings are available in the dedicated Settings tab */}
                 </Layout>
               )}
             </Box>
