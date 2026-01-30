@@ -2,6 +2,7 @@ services:
   - type: web
     name: shopify-pin-publish
     env: node
+    plan: free
     buildCommand: npm install && npm run build
     startCommand: npm run setup && npm run start
     envVars:
