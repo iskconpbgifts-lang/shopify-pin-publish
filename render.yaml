@@ -18,5 +18,7 @@ services:
         value: https://shopify-pin-publish.onrender.com
       - key: SHOPIFY_APP_URL
         value: https://shopify-pin-publish.onrender.com
+      - key: PORT
+        value: 3000
       - key: DATABASE_URL
         sync: false
