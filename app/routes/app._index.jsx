@@ -1014,13 +1014,37 @@ export default function Index() {
                             {/* Header Area */}
                             <InlineStack align="space-between" blockAlign="center">
                               <BlockStack gap="100">
-                                <InlineStack gap="200" align="center">
-                                  <Text as="h2" variant="headingXl">{selectedProduct.title}</Text>
-                                  {productQueue.length > 1 && (
+                                {productQueue.length > 1 && (
+                                  <InlineStack gap="200" align="start">
+                                    <Button
+                                      size="micro"
+                                      disabled={currentQueueIndex === 0}
+                                      onClick={() => {
+                                        const newIndex = Math.max(0, currentQueueIndex - 1);
+                                        setCurrentQueueIndex(newIndex);
+                                        setSelectedProduct(productQueue[newIndex]);
+                                      }}
+                                    >
+                                      &lt; Prev
+                                    </Button>
                                     <Badge tone="info">
                                       {currentQueueIndex + 1} / {productQueue.length}
                                     </Badge>
-                                  )}
+                                    <Button
+                                      size="micro"
+                                      disabled={currentQueueIndex === productQueue.length - 1}
+                                      onClick={() => {
+                                        const newIndex = Math.min(productQueue.length - 1, currentQueueIndex + 1);
+                                        setCurrentQueueIndex(newIndex);
+                                        setSelectedProduct(productQueue[newIndex]);
+                                      }}
+                                    >
+                                      Next &gt;
+                                    </Button>
+                                  </InlineStack>
+                                )}
+                                <InlineStack gap="200" align="center">
+                                  <Text as="h2" variant="headingXl">{selectedProduct.title}</Text>
                                   {selectedProduct.tags && selectedProduct.tags.includes("Pinterest Published") && (
                                     <Badge tone="success" size="large">Published</Badge>
                                   )}
