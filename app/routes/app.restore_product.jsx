@@ -1,17 +1,21 @@
 import { json } from "@remix-run/node";
 import { authenticate } from "../shopify.server";
+import { deletePinnedProduct } from "../models/pinned-products.server";
 
 export const action = async ({ request }) => {
-    const { admin } = await authenticate.admin(request);
-    const formData = await request.formData();
-    const productId = formData.get("productId");
-    // Default to removing 'Pinterest Ignored' if not specified, or generic tag
-    const tagToRemove = formData.get("tag") || "Pinterest Ignored";
+  const { admin, session } = await authenticate.admin(request);
+  const formData = await request.formData();
+  const productId = formData.get("productId");
+  // Default to removing 'Pinterest Ignored' if not specified, or generic tag
+  const tagToRemove = formData.get("tag") || "Pinterest Ignored";
 
-    if (!productId) return json({ error: "Missing ID" }, { status: 400 });
+  if (!productId) return json({ error: "Missing ID" }, { status: 400 });
 
-    await admin.graphql(
-        `#graphql
+  // 1. Delete from Database (Sync)
+  await deletePinnedProduct(session.shop, productId);
+
+  await admin.graphql(
+    `#graphql
       mutation removeTags($id: ID!, $tags: [String!]!) {
         tagsRemove(id: $id, tags: $tags) {
           userErrors {
@@ -20,13 +24,13 @@ export const action = async ({ request }) => {
           }
         }
       }`,
-        {
-            variables: {
-                id: productId,
-                tags: [tagToRemove]
-            }
-        }
-    );
+    {
+      variables: {
+        id: productId,
+        tags: [tagToRemove]
+      }
+    }
+  );
 
-    return json({ success: true });
+  return json({ success: true });
 };

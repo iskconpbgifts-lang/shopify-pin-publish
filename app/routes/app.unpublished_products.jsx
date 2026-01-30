@@ -65,7 +65,7 @@ export const loader = async ({ request }) => {
     const response = await admin.graphql(
       `#graphql
         query getUnpublishedProducts {
-          products(first: 50, query: "${query}", sortKey: CREATED_AT, reverse: true) {
+          products(first: 250, query: "${query}", sortKey: CREATED_AT, reverse: true) {
             nodes {
               id
               title

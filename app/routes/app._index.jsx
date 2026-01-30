@@ -1,52 +1,13 @@
-import { json } from "@remix-run/node";
-import { useEffect, useState, useCallback } from "react";
-import { useFetcher, useLoaderData } from "@remix-run/react";
-import {
-  Page,
-  Layout,
-  Text,
-  Card,
-  Button,
-  BlockStack,
-  InlineStack,
-  Modal,
-  Spinner,
-  Banner,
-  Badge,
-  EmptyState,
-  InlineGrid,
-  Box,
-  Divider,
-  CalloutCard,
-  Icon,
-  Tabs,
-  Select,
-  ResourceList, // [NEW]
-  ResourceItem, // [NEW]
-  Avatar,       // [NEW]
-  Badge as PolarisBadge // Rename to avoid conflict if any, or just use Badge
-} from "@shopify/polaris";
-import {
-  SettingsIcon,
-  DuplicateIcon
-} from "@shopify/polaris-icons";
-import { TitleBar, useAppBridge } from "@shopify/app-bridge-react";
-import { authenticate } from "../shopify.server";
-import { uploadImageToShopify } from "../services/shopify-files.server";
-import Cropper from "react-easy-crop";
-import getCroppedImg from "../utils";
+import { savePinnedProduct } from "../models/pinned-products.server";
 
-export const loader = async ({ request }) => {
-  const { session } = await authenticate.admin(request);
-  return json({ shop: session.shop });
-};
+// ... (existing imports)
 
 export const action = async ({ request }) => {
   console.log("Index Action: Request received");
 
   try {
-    const { admin } = await authenticate.admin(request);
-    // Use JSON parsing for better large payload handling
+    const { admin, session } = await authenticate.admin(request);
+    // ... (existing code)
     const { image: imageBase64, productId } = await request.json();
 
     if (!imageBase64) {
@@ -65,9 +26,39 @@ export const action = async ({ request }) => {
     const file = await uploadImageToShopify(admin, buffer, filename);
     console.log("Index Action: Success", file.url);
 
+    // [NEW] Fetch Product Details for DB
+    if (productId) {
+      console.log("Index Action: Fetching details for DB", productId);
+      const productResponse = await admin.graphql(
+        `#graphql
+            query getProduct($id: ID!) {
+              product(id: $id) {
+                title
+                handle
+              }
+            }`,
+        { variables: { id: productId } }
+      );
+      const productData = await productResponse.json();
+      const product = productData.data?.product;
+
+      if (product) {
+        console.log("Index Action: Saving to DB");
+        await savePinnedProduct({
+          shop: session.shop,
+          productId: productId,
+          productHandle: product.handle,
+          title: product.title,
+          imageUrl: file.url, // Use the NEW cropped image URL
+          status: "PUBLISHED"
+        });
+      }
+    }
+
     // Tag the product as Pinned
     if (productId) {
       console.log("Index Action: Tagging product", productId);
+      // ...
       await admin.graphql(
         `#graphql
         mutation addTags($id: ID!, $tags: [String!]!) {

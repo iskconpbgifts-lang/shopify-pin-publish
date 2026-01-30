@@ -32,3 +32,16 @@ model Session {
   refreshToken        String?
   refreshTokenExpires DateTime?
 }
+
+model PinnedProduct {
+  id            String   @id @default(uuid())
+  shop          String
+  productId     String
+  productHandle String?
+  status        String   // "PUBLISHED" or "IGNORED"
+  title         String?
+  imageUrl      String?
+  createdAt     DateTime @default(now())
+
+  @@index([shop, productId])
+}
