@@ -16,5 +16,7 @@ services:
         sync: false
       - key: HOST
         value: https://shopify-pin-publish.onrender.com
+      - key: SHOPIFY_APP_URL
+        value: https://shopify-pin-publish.onrender.com
       - key: DATABASE_URL
         sync: false
