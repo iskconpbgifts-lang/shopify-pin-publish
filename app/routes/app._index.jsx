@@ -19,7 +19,12 @@ import {
   Divider,
   CalloutCard,
   Icon,
-  Tabs
+  Tabs,
+  Select,
+  ResourceList, // [NEW]
+  ResourceItem, // [NEW]
+  Avatar,       // [NEW]
+  Badge as PolarisBadge // Rename to avoid conflict if any, or just use Badge
 } from "@shopify/polaris";
 import {
   SettingsIcon,
@@ -121,8 +126,32 @@ export default function Index() {
   const productFetcher = useFetcher();
   const unpublishedFetcher = useFetcher();
   const resetFetcher = useFetcher();
+  const ignoreFetcher = useFetcher(); // Ignore product
+  const collectionFetcher = useFetcher(); // Fetch collections for dropdown
 
   const [selectedTab, setSelectedTab] = useState(1); // Default to AI Publisher (Index 1)
+
+  // Filter State
+  const [collectionFilter, setCollectionFilter] = useState("");
+  const [collections, setCollections] = useState([]);
+
+  // Manager Tab State
+  const [managerTab, setManagerTab] = useState(0); // 0=Published, 1=Ignored
+  const managerFetcher = useFetcher(); // Fetcher for Manager Tab
+
+  // Load Collections on Mount
+  useEffect(() => {
+    collectionFetcher.load("/app/collections");
+  }, []);
+
+  useEffect(() => {
+    if (collectionFetcher.data && collectionFetcher.data.collections) {
+      setCollections([
+        { label: "All Products", value: "" },
+        ...collectionFetcher.data.collections
+      ]);
+    }
+  }, [collectionFetcher.data]);
 
   const handleResetStatus = () => {
     if (!selectedProduct) return;
@@ -167,10 +196,12 @@ export default function Index() {
         setSelectedImage(null);
 
         // Load unpublished products
-        unpublishedFetcher.load("/app/unpublished_products");
+        const params = new URLSearchParams();
+        if (collectionFilter) params.append("collection_id", collectionFilter);
+        unpublishedFetcher.load(`/app/unpublished_products?${params.toString()}`);
       }
     },
-    [],
+    [collectionFilter],
   );
 
   // Initial Load for AI Publisher if default (and Restore State)
@@ -191,6 +222,12 @@ export default function Index() {
       content: 'AI Publisher',
       accessibilityLabel: 'Auto-fetch unpublished products',
       panelID: 'ai-panel',
+    },
+    {
+      id: 'manager-tab',
+      content: 'Product Manager',
+      accessibilityLabel: 'Manage published and ignored products',
+      panelID: 'manager-panel',
     },
   ];
 
@@ -217,6 +254,45 @@ export default function Index() {
       }
     }
   }, [unpublishedFetcher.data]);
+
+  // Manager Tab Data Loader
+  useEffect(() => {
+    if (selectedTab === 2) {
+      const view = managerTab === 0 ? "published" : "ignored";
+      managerFetcher.load(`/app/manager_products?view=${view}`);
+    }
+  }, [selectedTab, managerTab]);
+
+  const handleManagerAction = (product, actionType) => {
+    // actionType: 'reset' (remove published) or 'restore' (remove ignored)
+    const route = "/app/reset_tags"; // Reuse generic reset which removes 'Pinterest Published'
+    // Wait, reset_tags only removes 'Pinterest Published'. 
+    // We need a generic 'untag' or specific handle.
+    // Actually /app/reset_tags removes specifically 'Pinterest Published'.
+
+    // Let's use a new efficient action plan:
+    // We'll use the SAME route but we might need to modify it or create a new one 'restore_product'.
+    // For now, let's assume we use 'restore_product' which we might need to create, 
+    // OR we just use 'ignore_product' logic but REMOVE tags?
+
+    // Let's use the 'resetFetcher' but pointing to a new quick action or just 'reset_tags' for published.
+    // For 'Ignored', we need to remove 'Pinterest Ignored'.
+
+    // I will create '/app/restore_product' logic inline in next step or reuse.
+    // For now, let's just trigger the 'resetFetcher' with a 'tagToRemove' param if I update backend?
+    // Or just separate fetcher calls.
+
+    if (actionType === 'reset_published') {
+      resetFetcher.submit({ productId: product.id }, { method: "POST", action: "/app/reset_tags" });
+    } else if (actionType === 'restore_ignored') {
+      // We need an action to remove 'Pinterest Ignored'.
+      // use resetFetcher for now, assuming I'll fix the backend to handle it or create new one.
+      resetFetcher.submit({ productId: product.id, tag: "Pinterest Ignored" }, { method: "POST", action: "/app/restore_product" });
+    }
+    shopify.toast.show("Updating product...");
+    // Optimistic update
+    // (Wait for revalidation usually better but ok)
+  };
 
   const selectProduct = async () => {
     const selected = await window.shopify.resourcePicker({
@@ -322,6 +398,18 @@ export default function Index() {
     }
   };
 
+  const handleIgnoreProduct = () => {
+    if (!selectedProduct) return;
+    ignoreFetcher.submit(
+      { productId: selectedProduct.id },
+      { method: "POST", action: "/app/ignore_product" }
+    );
+    shopify.toast.show("Product ignored");
+
+    // Auto-advance
+    handleNext();
+  };
+
   const onCropComplete = useCallback((croppedArea, croppedAreaPixels) => {
     setCroppedAreaPixels(croppedAreaPixels);
   }, []);
@@ -423,10 +511,21 @@ export default function Index() {
       const url = `https://www.pinterest.com/pin/create/button/?url=${encodeURIComponent(productUrl)}&media=${encodeURIComponent(mediaUrl)}&description=${encodeURIComponent(description)}`;
 
       setPinterestUrl(url);
+
+      // Prevent double-open in React Strict Mode / multiple renders
+      // We only want to open IF the URL has changed or we haven't opened it for this specific upload
+      const justOpened = sessionStorage.getItem("pin-publish-last-url");
+      if (justOpened !== url) {
+        window.open(url, '_blank');
+        sessionStorage.setItem("pin-publish-last-url", url);
+      }
     } else if (fetcher.data?.error) {
       shopify.toast.show(`Upload Error: ${fetcher.data.error}`);
     }
   }, [fetcher.data, selectedProduct, urlMode, customDomainInput, shop]);
+
+  // Hydration/Restoration State
+  const [isRestored, setIsRestored] = useState(false);
 
   // --- EFFECT HOISTING FIX ---
   // Initial Load for AI Publisher if default (and Restore State)
@@ -440,6 +539,13 @@ export default function Index() {
     const savedImage = localStorage.getItem("pin-publish-selected-image");
     const savedPinUrl = localStorage.getItem("pin-publish-pinterest-url");
 
+    // URL Settings
+    const savedUrlMode = localStorage.getItem("pin-publish-url-mode");
+    const savedCustomDomain = localStorage.getItem("pin-publish-custom-domain");
+    const savedCollection = localStorage.getItem("pin-publish-collection-filter");
+
+    let hasRestored = false;
+
     if (savedQueue) {
       try {
         const parsedQueue = JSON.parse(savedQueue);
@@ -448,28 +554,59 @@ export default function Index() {
           if (savedIndex) setCurrentQueueIndex(parseInt(savedIndex, 10));
           if (savedTab) setSelectedTab(parseInt(savedTab, 10));
 
-          // Restore Modal
-          if (savedModalOpen === "true" && savedImage) {
-            setSelectedImage(JSON.parse(savedImage));
+          if (savedUrlMode) setUrlMode(savedUrlMode);
+          if (savedCustomDomain) setCustomDomainInput(savedCustomDomain);
+          if (savedCollection) setCollectionFilter(savedCollection);
+
+          // Restore Modal State Independently
+
+          // Restore Modal State Independently
+          if (savedImage) {
+            try {
+              setSelectedImage(JSON.parse(savedImage));
+            } catch (err) { console.error("Bad saved image", err); }
+          }
+
+          if (savedModalOpen === "true") {
             setIsCropping(true);
-            if (savedPinUrl) setPinterestUrl(savedPinUrl);
+          }
+
+          if (savedPinUrl) {
+            setPinterestUrl(savedPinUrl);
+            setIsCropping(true); // Force open if we have a URL waiting
           }
 
           shopify.toast.show("Session restored!");
-          return; // Skip fetch if restoring
+          hasRestored = true;
         }
       } catch (e) {
         console.error("Failed to parse saved queue", e);
       }
     }
 
-    if (selectedTab === 1) {
-      unpublishedFetcher.load("/app/unpublished_products");
+    // Default Load if NOT restored
+    if (!hasRestored && selectedTab === 1) {
+      const params = new URLSearchParams();
+      // If we restored a filter but no queue, use that filter
+      const filterToLoad = savedCollection || collectionFilter;
+      if (filterToLoad) {
+        params.append("collection_id", filterToLoad);
+        if (savedCollection) setCollectionFilter(savedCollection);
+      }
+
+      unpublishedFetcher.load(`/app/unpublished_products?${params.toString()}`);
     }
+
+    // Mark restoration as complete so we can start saving
+    setIsRestored(true);
+
   }, []); // Run once on mount
 
   // Persist State
   useEffect(() => {
+    // Only save IF we have finished the initial restoration check
+    if (!isRestored) return;
+
     if (productQueue.length > 0) {
       localStorage.setItem("pin-publish-queue", JSON.stringify(productQueue));
       localStorage.setItem("pin-publish-index", currentQueueIndex.toString());
@@ -489,18 +626,77 @@ export default function Index() {
       localStorage.removeItem("pin-publish-pinterest-url");
     }
 
-  }, [productQueue, currentQueueIndex, selectedTab, isCropping, selectedImage, pinterestUrl]);
+    // Persist URL Settings
+    localStorage.setItem("pin-publish-url-mode", urlMode);
+    localStorage.setItem("pin-publish-custom-domain", customDomainInput);
+    localStorage.setItem("pin-publish-collection-filter", collectionFilter);
+
+  }, [productQueue, currentQueueIndex, selectedTab, isCropping, selectedImage, pinterestUrl, isRestored, urlMode, customDomainInput, collectionFilter]);
   // ---------------------------
 
   const openPinterest = () => {
     if (pinterestUrl) {
       window.open(pinterestUrl, '_blank');
-
-      setIsCropping(false);
-      setPinterestUrl(null);
-      setSelectedImage(null);
+      // Do NOT clear state here. User wants it to remain open.
+      // They can click "Load Next" or "Close" manually.
     }
   };
+
+  const renderManagerContents = () => (
+    <BlockStack gap="400">
+      <Tabs
+        tabs={[
+          { content: 'Published', id: 'published-view' },
+          { content: 'Ignored', id: 'ignored-view' }
+        ]}
+        selected={managerTab}
+        onSelect={setManagerTab}
+        fitted
+      />
+      <Card>
+        <ResourceList
+          resourceName={{ singular: 'product', plural: 'products' }}
+          items={managerFetcher.data?.products || []}
+          loading={managerFetcher.state === "loading"}
+          emptyState={
+            <EmptyState
+              heading="No products found"
+              image="https://cdn.shopify.com/s/files/1/0262/4071/2726/files/emptystate-files.png"
+            >
+              <p>No products found in this category.</p>
+            </EmptyState>
+          }
+          renderItem={(item) => {
+            const { id, title, image } = item;
+            const media = <Avatar customer={false} size="medium" name={title} source={image} />;
+
+            return (
+              <ResourceItem
+                id={id}
+                url="#"
+                media={media}
+                accessibilityLabel={`View details for ${title}`}
+              >
+                <InlineStack align="space-between" blockAlign="center">
+                  <Text variant="bodyMd" fontWeight="bold" as="h3">
+                    {title}
+                  </Text>
+                  <Button
+                    size="slim"
+                    variant="plain"
+                    tone="critical"
+                    onClick={() => handleManagerAction(item, managerTab === 0 ? 'reset_published' : 'restore_ignored')}
+                  >
+                    {managerTab === 0 ? "Reset Status" : "Restore to Queue"}
+                  </Button>
+                </InlineStack>
+              </ResourceItem>
+            );
+          }}
+        />
+      </Card>
+    </BlockStack>
+  );
 
   // ... (render) ...
 
@@ -518,15 +714,35 @@ export default function Index() {
                   <Layout.Section>
                     <Card>
                       <EmptyState
-                        heading="Start Pinning your Products"
-                        action={{
+                        heading={selectedTab === 1 ? "AI Publisher Queue" : "Start Pinning your Products"}
+                        action={selectedTab === 1 ? undefined : {
                           content: 'Select Product',
                           onAction: selectProduct,
-                          id: 'btn-select-product-empty'
                         }}
                         image="https://cdn.shopify.com/s/files/1/0262/4071/2726/files/emptystate-files.png"
                       >
-                        <p>Select a product from your catalog to create a Pinterest-optimized pin (2:3 aspect ratio).</p>
+                        {selectedTab === 1 ? (
+                          <BlockStack gap="400">
+                            <p>Auto-load unpublished products. Optionally filter by type.</p>
+                            <InlineStack gap="300">
+                              <Button
+                                variant="primary"
+                                onClick={() => {
+                                  setProductQueue([]);
+                                  setCurrentQueueIndex(0);
+                                  const params = new URLSearchParams();
+                                  if (collectionFilter) params.append("collection_id", collectionFilter);
+                                  unpublishedFetcher.load(`/app/unpublished_products?${params.toString()}`);
+                                  shopify.toast.show("Loading...");
+                                }}
+                              >
+                                Load Products
+                              </Button>
+                            </InlineStack>
+                          </BlockStack>
+                        ) : (
+                          <p>Select a product from your catalog to create a Pinterest-optimized pin (2:3 aspect ratio).</p>
+                        )}
                       </EmptyState>
                     </Card>
                   </Layout.Section>
@@ -556,6 +772,63 @@ export default function Index() {
                             )}
                           </BlockStack>
                         )}
+
+                        {/* MANAGER TAB UI */}
+                        {selectedTab === 2 && (
+                          <BlockStack gap="400">
+                            <Tabs
+                              tabs={[
+                                { content: 'Published', id: 'published-view' },
+                                { content: 'Ignored', id: 'ignored-view' }
+                              ]}
+                              selected={managerTab}
+                              onSelect={setManagerTab}
+                              fitted
+                            />
+                            <Card>
+                              <ResourceList
+                                resourceName={{ singular: 'product', plural: 'products' }}
+                                items={managerFetcher.data?.products || []}
+                                loading={managerFetcher.state === "loading"}
+                                emptyState={
+                                  <EmptyState
+                                    heading="No products found"
+                                    image="https://cdn.shopify.com/s/files/1/0262/4071/2726/files/emptystate-files.png"
+                                  >
+                                    <p>No products found in this category.</p>
+                                  </EmptyState>
+                                }
+                                renderItem={(item) => {
+                                  const { id, title, image } = item;
+                                  const media = <Avatar customer={false} size="medium" name={title} source={image} />;
+
+                                  return (
+                                    <ResourceItem
+                                      id={id}
+                                      url="#"
+                                      media={media}
+                                      accessibilityLabel={`View details for ${title}`}
+                                    >
+                                      <InlineStack align="space-between" blockAlign="center">
+                                        <Text variant="bodyMd" fontWeight="bold" as="h3">
+                                          {title}
+                                        </Text>
+                                        <Button
+                                          size="slim"
+                                          variant="plain"
+                                          tone="critical"
+                                          onClick={() => handleManagerAction(item, managerTab === 0 ? 'reset_published' : 'restore_ignored')}
+                                        >
+                                          {managerTab === 0 ? "Reset Status" : "Restore to Queue"}
+                                        </Button>
+                                      </InlineStack>
+                                    </ResourceItem>
+                                  );
+                                }}
+                              />
+                            </Card>
+                          </BlockStack>
+                        )}
                       </BlockStack>
                     </Card>
                   </Layout.Section>
@@ -566,72 +839,117 @@ export default function Index() {
                   <Layout.Section>
                     <Card>
                       <BlockStack gap="500">
-                        {/* Header Area */}
-                        <InlineStack align="space-between" blockAlign="center">
-                          <BlockStack gap="100">
-                            <InlineStack gap="200" align="center">
-                              <Text as="h2" variant="headingXl">{selectedProduct.title}</Text>
-                              {selectedProduct.tags && selectedProduct.tags.includes("Pinterest Published") && (
-                                <Badge tone="success" size="large">Published</Badge>
-                              )}
-                              {selectedProduct.tags && selectedProduct.tags.includes("Pinterest Published") && (
-                                <Button size="micro" onClick={handleResetStatus} tone="critical" variant="plain">Reset</Button>
-                              )}
+                        {/* MAIN UI for Manual/AI Tabs */}
+                        {selectedTab !== 2 && (
+                          <BlockStack gap="500">
+                            {/* Header Area */}
+                            <InlineStack align="space-between" blockAlign="center">
+                              <BlockStack gap="100">
+                                <InlineStack gap="200" align="center">
+                                  <Text as="h2" variant="headingXl">{selectedProduct.title}</Text>
+                                  {productQueue.length > 1 && (
+                                    <Badge tone="info">
+                                      {currentQueueIndex + 1} / {productQueue.length}
+                                    </Badge>
+                                  )}
+                                  {selectedProduct.tags && selectedProduct.tags.includes("Pinterest Published") && (
+                                    <Badge tone="success" size="large">Published</Badge>
+                                  )}
+                                  {selectedProduct.tags && selectedProduct.tags.includes("Pinterest Published") && (
+                                    <Button size="micro" onClick={handleResetStatus} tone="critical" variant="plain">Reset</Button>
+                                  )}
+                                </InlineStack>
+                                <InlineStack gap="200">
+                                  <Button
+                                    id="btn-copy-title"
+                                    variant="plain"
+                                    icon={DuplicateIcon}
+                                    onClick={() => {
+                                      navigator.clipboard.writeText(selectedProduct.title);
+                                      shopify.toast.show("Title copied");
+                                    }}
+                                  >
+                                    Copy Title
+                                  </Button>
+                                  <Button
+                                    variant="monochromeOutline"
+                                    tone="critical"
+                                    onClick={handleIgnoreProduct}
+                                  >
+                                    Ignore
+                                  </Button>
+                                </InlineStack>
+                              </BlockStack>
+                              <InlineStack gap="300" align="center">
+                                {selectedTab === 1 && (
+                                  <div style={{ width: '200px' }}>
+                                    <Select
+                                      label="Collection"
+                                      labelHidden
+                                      options={collections}
+                                      value={collectionFilter}
+                                      onChange={(value) => {
+                                        setCollectionFilter(value);
+                                        setProductQueue([]);
+                                        setCurrentQueueIndex(0);
+                                        setSelectedProduct(null);
+                                        const params = new URLSearchParams();
+                                        if (value) params.append("collection_id", value);
+                                        unpublishedFetcher.load(`/app/unpublished_products?${params.toString()}`);
+                                        shopify.toast.show("Loading Collection...");
+                                      }}
+                                    />
+                                  </div>
+                                )}
+                                {selectedTab !== 1 && (
+                                  <Button id="btn-change-product" onClick={selectProduct}>Change Product</Button>
+                                )}
+                              </InlineStack>
                             </InlineStack>
-                            <InlineStack gap="200">
-                              <Button
-                                id="btn-copy-title"
-                                variant="plain"
-                                icon={DuplicateIcon}
-                                onClick={() => {
-                                  navigator.clipboard.writeText(selectedProduct.title);
-                                  shopify.toast.show("Title copied");
-                                }}
-                              >
-                                Copy Title
-                              </Button>
-                            </InlineStack>
+
+                            <Divider />
+
+                            {/* Image Selection Area */}
+                            <BlockStack gap="300">
+                              <Text variant="headingMd">Select an image to Pin</Text>
+                              <Text variant="bodySm" tone="subdued">Click an image to open the cropper.</Text>
+
+                              <InlineGrid columns={['oneThird', 'oneThird', 'oneThird', 'oneThird']} gap="400">
+                                {selectedProduct.images.map((img, index) => (
+                                  <div
+                                    key={img.id}
+                                    id={`img-thumbnail-${index}`}
+                                    style={{
+                                      cursor: 'pointer',
+                                      border: '1px solid #e1e3e5',
+                                      borderRadius: '8px',
+                                      overflow: 'hidden',
+                                      position: 'relative',
+                                      aspectRatio: '1 / 1'
+                                    }}
+                                    onClick={() => {
+                                      setSelectedImage(img);
+                                      setIsCropping(true);
+                                    }}
+                                  >
+                                    <img
+                                      src={img.originalSrc}
+                                      alt={img.altText || selectedProduct.title}
+                                      style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+                                    />
+                                    <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: 'rgba(0,0,0,0.03)', padding: '4px', textAlign: 'center' }}>
+                                      <Text variant="bodyXs" tone="subdued">Select</Text>
+                                    </div>
+                                  </div>
+                                ))}
+                              </InlineGrid>
+                            </BlockStack>
                           </BlockStack>
-                          <Button id="btn-change-product" onClick={selectProduct}>Change Product</Button>
-                        </InlineStack>
+                        )}
 
-                        <Divider />
+                        {/* MANAGER TAB UI */}
+                        {selectedTab === 2 && renderManagerContents()}
 
-                        {/* Image Selection Area */}
-                        <BlockStack gap="300">
-                          <Text variant="headingMd">Select an image to Pin</Text>
-                          <Text variant="bodySm" tone="subdued">Click an image to open the cropper.</Text>
-
-                          <InlineGrid columns={['oneThird', 'oneThird', 'oneThird', 'oneThird']} gap="400">
-                            {selectedProduct.images.map((img, index) => (
-                              <div
-                                key={img.id}
-                                id={`img-thumbnail-${index}`}
-                                style={{
-                                  cursor: 'pointer',
-                                  border: '1px solid #e1e3e5',
-                                  borderRadius: '8px',
-                                  overflow: 'hidden',
-                                  position: 'relative',
-                                  aspectRatio: '1 / 1'
-                                }}
-                                onClick={() => {
-                                  setSelectedImage(img);
-                                  setIsCropping(true);
-                                }}
-                              >
-                                <img
-                                  src={img.originalSrc}
-                                  alt={img.altText || selectedProduct.title}
-                                  style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
-                                />
-                                <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: 'rgba(0,0,0,0.03)', padding: '4px', textAlign: 'center' }}>
-                                  <Text variant="bodyXs" tone="subdued">Select</Text>
-                                </div>
-                              </div>
-                            ))}
-                          </InlineGrid>
-                        </BlockStack>
                       </BlockStack>
                     </Card>
                   </Layout.Section>
@@ -690,6 +1008,8 @@ export default function Index() {
                               </Box>
                             )}
 
+
+
                             <Divider />
                             <Text fontWeight="bold">Danger Zone</Text>
                             <Button tone="critical" onClick={handleResetAll} fullWidth>
@@ -701,6 +1021,9 @@ export default function Index() {
                             Linking to: {urlMode === 'default' ? 'Online Store' : 'Custom Domain'}
                           </Text>
                         )}
+
+
+
                       </BlockStack>
                     </Card>
                   </Layout.Section>
@@ -708,12 +1031,13 @@ export default function Index() {
               )}
             </Box>
           </Tabs>
-        </Card>
-      </BlockStack>
+        </Card >
+      </BlockStack >
 
       {/* Cropper Modal */}
-      <Modal
-        open={isCropping}
+      < Modal
+        open={isCropping || !!pinterestUrl
+        }
         onClose={() => setIsCropping(false)}
         title={pinterestUrl ? "Ready to Pin!" : "Crop Image for Pinterest (2:3)"}
         primaryAction={{
@@ -722,16 +1046,17 @@ export default function Index() {
           onAction: pinterestUrl ? openPinterest : handleCropAndPublish,
           disabled: isUploading && !pinterestUrl
         }}
-        secondaryActions={[
-          {
-            content: "Load Next Product",
-            onAction: handleNext,
-          },
-          {
-            content: pinterestUrl ? "Close" : "Cancel",
-            onAction: () => { setIsCropping(false); setPinterestUrl(null); },
-          }
-        ]}
+        secondaryActions={
+          [
+            {
+              content: "Load Next Product",
+              onAction: handleNext,
+            },
+            {
+              content: pinterestUrl ? "Close" : "Cancel",
+              onAction: () => { setIsCropping(false); setPinterestUrl(null); },
+            }
+          ]}
       >
         <Modal.Section>
           <BlockStack gap="400">
@@ -806,7 +1131,7 @@ export default function Index() {
             )}
           </BlockStack>
         </Modal.Section>
-      </Modal>
+      </Modal >
 
     </Page >
   );
