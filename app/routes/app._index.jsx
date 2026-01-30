@@ -37,6 +37,11 @@ import Cropper from "react-easy-crop";
 import getCroppedImg from "../utils";
 import { savePinnedProduct } from "../models/pinned-products.server";
 
+export const loader = async ({ request }) => {
+  const { session } = await authenticate.admin(request);
+  return json({ shop: session.shop });
+};
+
 export const action = async ({ request }) => {
   console.log("Index Action: Request received");
 
