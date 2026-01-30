@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: shopify-pin-publish
+    env: node
+    buildCommand: npm install && npm run build
+    startCommand: npm run setup && npm run start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: SCOPES
+        value: write_products,read_files,write_files
+      - key: SHOPIFY_API_KEY
+        sync: false
+      - key: SHOPIFY_API_SECRET
+        sync: false
+      - key: HOST
+        sync: false
+      - key: DATABASE_URL
+        sync: false
