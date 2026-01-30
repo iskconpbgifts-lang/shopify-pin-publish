@@ -1,6 +1,41 @@
+import { json } from "@remix-run/node";
+import { useEffect, useState, useCallback } from "react";
+import { useFetcher, useLoaderData } from "@remix-run/react";
+import {
+  Page,
+  Layout,
+  Text,
+  Card,
+  Button,
+  BlockStack,
+  InlineStack,
+  Modal,
+  Spinner,
+  Banner,
+  Badge,
+  EmptyState,
+  InlineGrid,
+  Box,
+  Divider,
+  CalloutCard,
+  Icon,
+  Tabs,
+  Select,
+  ResourceList,
+  ResourceItem,
+  Avatar,
+  Badge as PolarisBadge
+} from "@shopify/polaris";
+import {
+  SettingsIcon,
+  DuplicateIcon
+} from "@shopify/polaris-icons";
+import { TitleBar, useAppBridge } from "@shopify/app-bridge-react";
+import { authenticate } from "../shopify.server";
+import { uploadImageToShopify } from "../services/shopify-files.server";
+import Cropper from "react-easy-crop";
+import getCroppedImg from "../utils";
 import { savePinnedProduct } from "../models/pinned-products.server";
-
-// ... (existing imports)
 
 export const action = async ({ request }) => {
   console.log("Index Action: Request received");
