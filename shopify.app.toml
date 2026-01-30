@@ -2,12 +2,11 @@
 
 client_id = "dff09f5d1a66c25736ba40c9b8a4b9a5"
 name = "pins"
-application_url = "https://example.com"
+application_url = "https://shopify-pin-publish.onrender.com"
 embedded = true
 
 [build]
 automatically_update_urls_on_dev = true
-include_config_on_deploy = true
 
 [webhooks]
 api_version = "2026-04"
@@ -25,4 +24,8 @@ api_version = "2026-04"
 scopes = "write_products,read_files,write_files"
 
 [auth]
-redirect_urls = [ "https://example.com/api/auth" ]
+redirect_urls = [
+  "https://shopify-pin-publish.onrender.com/auth/callback",
+  "https://shopify-pin-publish.onrender.com/auth/shopify/callback",
+  "https://shopify-pin-publish.onrender.com/api/auth/callback"
+]
