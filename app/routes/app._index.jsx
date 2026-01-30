@@ -1153,6 +1153,23 @@ export default function Index() {
               </Banner>
             ) : (
               <div style={{ position: 'relative', width: '100%', height: 400, background: '#333' }}>
+                <style>{`
+                  .reactEasyCrop_CropArea {
+                    border: 2px solid #005bd3 !important;
+                    box-shadow: 0 0 0 9999em rgba(0, 0, 0, 0.5); /* Dim outside area */
+                    color: #005bd3 !important; /* Sets default border color for some versions */
+                  }
+                  .reactEasyCrop_CropAreaGrid::before {
+                    border-color: rgba(0, 91, 211, 0.9) !important;
+                    border-top-width: 1px !important;
+                    border-bottom-width: 1px !important;
+                  }
+                  .reactEasyCrop_CropAreaGrid::after {
+                    border-color: rgba(0, 91, 211, 0.9) !important;
+                    border-left-width: 1px !important;
+                    border-right-width: 1px !important;
+                  }
+                `}</style>
                 {selectedImage && (
                   <Cropper
                     image={selectedImage.originalSrc}
