@@ -14,7 +14,7 @@ export const loader = async ({ request }) => {
       `#graphql
         query getCollectionProducts($id: ID!) {
           collection(id: $id) {
-            products(first: 250) {
+            products(first: 250, sortKey: CREATED, reverse: true) {
               nodes {
                 id
                 title
@@ -65,7 +65,7 @@ export const loader = async ({ request }) => {
     const response = await admin.graphql(
       `#graphql
         query getUnpublishedProducts {
-          products(first: 50, query: "${query}") {
+          products(first: 50, query: "${query}", sortKey: CREATED_AT, reverse: true) {
             nodes {
               id
               title

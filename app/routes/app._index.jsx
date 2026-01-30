@@ -162,6 +162,8 @@ export default function Index() {
     }
   }, [collectionFetcher.data]);
 
+  const markPublishedFetcher = useFetcher();
+
   const handleResetStatus = () => {
     if (!selectedProduct) return;
     resetFetcher.submit(
@@ -178,6 +180,24 @@ export default function Index() {
       return p;
     }));
     shopify.toast.show("Resetting status...");
+  };
+
+  const handleMarkPublished = () => {
+    if (!selectedProduct) return;
+    markPublishedFetcher.submit(
+      { productId: selectedProduct.id },
+      { method: "POST", action: "/app/mark_published" }
+    );
+
+    // Optimistic Update: Add "Pinterest Published" tag
+    setProductQueue(prev => prev.map(p => {
+      if (p.id === selectedProduct.id) {
+        const newTags = p.tags ? [...p.tags, "Pinterest Published"] : ["Pinterest Published"];
+        return { ...p, tags: newTags };
+      }
+      return p;
+    }));
+    shopify.toast.show("Marked as Published");
   };
 
   const handleResetAll = () => {
@@ -1045,17 +1065,17 @@ export default function Index() {
                                 )}
                                 <InlineStack gap="200" align="center">
                                   <Text as="h2" variant="headingXl">{selectedProduct.title}</Text>
-                                  {selectedProduct.tags && selectedProduct.tags.includes("Pinterest Published") && (
-                                    <Badge tone="success" size="large">Published</Badge>
-                                  )}
-                                  {selectedProduct.tags && selectedProduct.tags.includes("Pinterest Published") && (
-                                    <Button size="micro" onClick={handleResetStatus} tone="critical" variant="plain">Reset</Button>
+                                  {selectedProduct.tags && selectedProduct.tags.includes("Pinterest Published") ? (
+                                    <>
+                                      <Badge tone="success" size="large">Published</Badge>
+                                      <Button size="micro" onClick={handleResetStatus} tone="critical" variant="plain">Reset</Button>
+                                    </>
+                                  ) : (
+                                    <Button size="micro" onClick={handleMarkPublished} tone="success" variant="plain">Mark Published</Button>
                                   )}
                                 </InlineStack>
-                                <InlineStack gap="200">
+                                <InlineStack gap="300" align="start">
                                   <Button
-                                    id="btn-copy-title"
-                                    variant="plain"
                                     icon={DuplicateIcon}
                                     onClick={() => {
                                       navigator.clipboard.writeText(selectedProduct.title);
@@ -1064,9 +1084,16 @@ export default function Index() {
                                   >
                                     Copy Title
                                   </Button>
+
+                                  {selectedProduct.tags && selectedProduct.tags.includes("Pinterest Published") ? (
+                                    <Button disabled>Published</Button>
+                                  ) : (
+                                    <Button onClick={handleMarkPublished} tone="success">Mark as Published</Button>
+                                  )}
+
                                   <Button
-                                    variant="monochromeOutline"
                                     tone="critical"
+                                    variant="plain"
                                     onClick={handleIgnoreProduct}
                                   >
                                     Ignore
