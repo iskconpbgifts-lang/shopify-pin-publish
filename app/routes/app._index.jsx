@@ -36,10 +36,12 @@ import { uploadImageToShopify } from "../services/shopify-files.server";
 import Cropper from "react-easy-crop";
 import getCroppedImg from "../utils";
 import { savePinnedProduct } from "../models/pinned-products.server";
+import { getShopSettings } from "../models/settings.server";
 
 export const loader = async ({ request }) => {
   const { session } = await authenticate.admin(request);
-  return json({ shop: session.shop });
+  const settings = await getShopSettings(session.shop);
+  return json({ shop: session.shop, savedSettings: settings });
 };
 
 export const action = async ({ request }) => {
@@ -137,7 +139,10 @@ export default function Index() {
   const fetcher = useFetcher();
   const shopify = useAppBridge();
 
-  const { shop } = useLoaderData();
+  const { shop, savedSettings } = useLoaderData();
+
+  // Settings Saver
+  const settingsFetcher = useFetcher();
 
   // Queue State
   const [productQueue, setProductQueue] = useState([]);
@@ -171,13 +176,32 @@ export default function Index() {
   const managerFetcher = useFetcher(); // Fetcher for Manager Tab
 
   // Watermark State
-  const [watermarkSettings, setWatermarkSettings] = useState({
+  const [watermarkSettings, setWatermarkSettings] = useState(savedSettings?.watermark || {
     enabled: false,
     image: null, // Base64
     opacity: 0.8, // 0-1
     scale: 0.2,   // 0-1
     position: 'bottom-right' // top-left, top-right, center, bottom-left, bottom-right
   });
+
+  // Auto-Save Watermark Settings (Debounced)
+  useEffect(() => {
+    // Don't save if it matches what we loaded (avoids initial save)
+    // checking specific properties to avoid reference issues
+    const isDifferent = JSON.stringify(watermarkSettings) !== JSON.stringify(savedSettings?.watermark);
+
+    if (isDifferent) {
+      const timer = setTimeout(() => {
+        if (settingsFetcher.state === "idle") {
+          settingsFetcher.submit(
+            { watermark: watermarkSettings },
+            { method: "POST", action: "/api/settings", encType: "application/json" }
+          );
+        }
+      }, 2000); // 2 second debounce to prevent flood
+      return () => clearTimeout(timer);
+    }
+  }, [watermarkSettings, savedSettings]);
 
   // Load Collections on Mount
   useEffect(() => {

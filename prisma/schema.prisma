@@ -45,3 +45,10 @@ model PinnedProduct {
 
   @@index([shop, productId])
 }
+
+model ShopSettings {
+  id        String   @id @default(uuid())
+  shop      String   @unique
+  settings  String   // JSON string: { watermark: { enabled, image, opacity... } }
+  updatedAt DateTime @updatedAt
+}
